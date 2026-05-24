@@ -1,0 +1,229 @@
+{
+  // OpenCode agent configuration
+  // Docs: https://opencode.ai/docs
+  //
+  // Three providers:
+  //   litellm  — LiteLLM proxy at :4000 (unified gateway to oMLX + Anthropic + Gemini)
+  //   anthropic — Anthropic direct (used by plan agent)
+  //   google    — Gemini direct (used by review agent)
+  //
+  // Three agent modes:
+  //   plan   — Claude Sonnet, max 3 reasoning rounds, writes plan to memory-st
+  //   dev    — LiteLLM auto-routing, unlimited ReAct, reads plan from memory-st
+  //   review — Gemini Flash, max 2 rounds, reads git diff
+  //
+  // Five MCP servers:
+  //   memory-st    — volatile session memory (plan ↔ dev handoff)
+  //   memory-lt    — persistent SQLite memory (cross-session knowledge)
+  //   filesystem   — scoped project file access
+  //   brave-search — web search tool available to all agents
+  //   fetch        — URL fetch and parse tool
+
+  "$schema": "https://opencode.ai/config.json",
+  "autoshare": false,
+  "theme": "opencode",
+
+  // Default model: LiteLLM proxy routes to oMLX (local) by default.
+  // Switch to a named mode for the plan/dev/review pipeline.
+  "model": "litellm/omlx-fast",
+
+  // ── PROVIDERS ──────────────────────────────────────────────────────────────
+
+  "providers": {
+
+    // LiteLLM proxy — unified gateway running in Docker at :4000.
+    // Exposes local oMLX models and cloud models under a single endpoint.
+    // Model names here must match the model_name entries in litellm_config.yaml.
+    "litellm": {
+      "name": "LiteLLM Gateway (oMLX + cloud)",
+      "type": "openai",
+      "baseURL": "http://localhost:4000/v1",
+      "apiKey": "${LITELLM_MASTER_KEY}",
+      "models": {
+
+        // oMLX local models — free, private, Apple Silicon
+        "omlx-fast": {
+          "name": "oMLX · Qwen2.5-Coder 7B  (local, ~80 tok/s)",
+          "contextLength": 32768
+        },
+        "omlx-smart": {
+          "name": "oMLX · Qwen2.5-Coder 14B (local, ~45 tok/s)",
+          "contextLength": 16384
+        },
+
+        // Cloud models exposed via LiteLLM
+        "claude-plan": {
+          "name": "Claude Sonnet · planning (cloud)",
+          "contextLength": 200000
+        },
+        "claude-fast": {
+          "name": "Claude Haiku · fast cloud",
+          "contextLength": 200000
+        },
+        "gemini-fast": {
+          "name": "Gemini 2.0 Flash · review (cloud)",
+          "contextLength": 1000000
+        },
+        "gemini-pro": {
+          "name": "Gemini 2.5 Pro · deep reasoning (cloud)",
+          "contextLength": 1000000
+        }
+      }
+    },
+
+    // Anthropic direct — used by the plan agent mode.
+    // LiteLLM also proxies Anthropic, but direct access is simpler for a
+    // single model locked to the plan agent.
+    "anthropic": {
+      "name": "Anthropic (direct)",
+      "apiKey": "${ANTHROPIC_API_KEY}",
+      "models": {
+        "claude-sonnet-4-5-20251101": {
+          "name": "Claude Sonnet 4.5 · plan agent",
+          "contextLength": 200000
+        },
+        "claude-haiku-4-5-20251001": {
+          "name": "Claude Haiku 4.5 · fast tasks",
+          "contextLength": 200000
+        }
+      }
+    },
+
+    // Gemini direct — used by the review agent mode and as escalation target.
+    "google": {
+      "name": "Google Gemini (direct)",
+      "type": "openai",
+      "baseURL": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "apiKey": "${GEMINI_API_KEY}",
+      "models": {
+        "gemini-2.0-flash-exp": {
+          "name": "Gemini 2.0 Flash · review agent",
+          "contextLength": 1000000
+        },
+        "gemini-2.5-pro-preview-06-05": {
+          "name": "Gemini 2.5 Pro · deep reasoning",
+          "contextLength": 1000000
+        }
+      }
+    }
+  },
+
+  // ── MCP SERVERS ────────────────────────────────────────────────────────────
+  // OpenCode starts these automatically when it launches.
+  // All tools from all servers are available to every agent mode.
+
+  "mcp": {
+
+    // Short-term memory — volatile, session-scoped.
+    // Plan agent writes the plan here. Dev agent reads it at startup.
+    // Cleared when OpenCode exits.
+    // Key tools: create_entities, add_observations, get_entities, search_nodes
+    "memory-st": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+
+    // Long-term memory — persistent across sessions.
+    // SQLite database mounted in Docker volume, served by Node.js.
+    // Key tools: memory_search, memory_save_task, memory_find_pattern,
+    //            memory_save_pattern, memory_get_recent, memory_get_stats
+    //
+    // This entry uses a lightweight stdio bridge script that proxies MCP
+    // calls to the memory server running in Docker at :3100.
+    // See memory-server/src/stdio-bridge.js for the bridge implementation.
+    "memory-lt": {
+      "type": "local",
+      "command": "node",
+      "args": ["REPLACE_WITH_ABSOLUTE_PATH/memory-server/src/stdio-bridge.js"],
+      "env": {
+        "MEMORY_SERVER_URL": "http://localhost:3100"
+      }
+    },
+
+    // Filesystem — scoped to your projects directory.
+    // Change the path argument to your actual projects root.
+    // Gives agents read/write access to files under that path.
+    "filesystem": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${HOME}/projects"
+      ]
+    },
+
+    // Web search — Brave Search API.
+    // Get a free key (2000 req/mo) at brave.com/search/api
+    // Tool name exposed to agents: brave_web_search
+    // Used by plan agent to look up API docs and library patterns.
+    // Used by dev agent to search for error messages during debugging.
+    "brave-search": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
+    },
+
+    // URL fetch — fetch and parse any webpage as markdown.
+    // Tool name exposed to agents: fetch
+    // Used to read documentation, GitHub READMEs, Stack Overflow answers.
+    "fetch": {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"]
+    }
+  },
+
+  // ── AGENT MODES ────────────────────────────────────────────────────────────
+  // Switch modes in OpenCode with: /mode <name>
+  // Each mode has its own model and system prompt.
+  // All modes share the same MCP tool servers defined above.
+
+  "mode": {
+
+    // ── PLAN MODE ─────────────────────────────────────────────────────────────
+    // Model: Claude Sonnet (Anthropic, direct)
+    // Why: Best reasoning for exploring an unfamiliar codebase and producing
+    //      an accurate, file-specific implementation plan.
+    // Cap: 3 reasoning rounds enforced by system prompt.
+    //      Round 1 = explore. Round 2 = analyse. Round 3 = write plan + finish.
+    // Output: structured plan written to memory-st via create_entities.
+    "plan": {
+      "model": "anthropic/claude-sonnet-4-5-20251101",
+      "temperature": 0.15,
+      "maxTokens": 8192,
+      "system": "You are the PLAN AGENT — a senior software architect.\n\nYour job is to understand a coding task and produce a precise, file-specific implementation plan by exploring the codebase with tools. You have exactly 3 reasoning rounds. Use them carefully.\n\n## ROUND STRUCTURE\n\nROUND 1 — EXPLORE\n- Use list_directory to map the project structure\n- Use read_file on key entry points (index, main, app, routes, etc.)\n- Use memory_search (memory-lt) to find past similar tasks\n- Use memory_find_pattern (memory-lt) to find relevant established patterns\n- Use brave_web_search if the task involves an unfamiliar library or API\n\nROUND 2 — ANALYSE\n- Use read_file on the specific files that will be affected\n- Use search_files to find how similar features are implemented elsewhere\n- Use fetch to read documentation if you found a relevant URL in round 1\n\nROUND 3 — WRITE PLAN\n- Use create_entities (memory-st) to store the plan\n  Entity name: \"current-plan\", Entity type: \"plan\"\n  Add one observation per field (see format below)\n- Write the plan clearly to the user\n- End your message with exactly: PLAN COMPLETE ✓\n\n## PLAN FORMAT (store each field as a separate observation)\n\n\"TASK: <one sentence>\"\n\"FILES_TO_CHANGE: <path> → <what changes>; <path> → <what changes>\"\n\"FILES_TO_CREATE: <path> → <purpose>\"\n\"STEP_1: <concrete action>\"\n\"STEP_2: <concrete action>\"\n\"STEP_3: <concrete action>\"\n(continue for all steps)\n\"PATTERNS: <pattern name> — found in <file path>\"\n\"EDGE_CASES: <edge case to handle>\"\n\"TESTS: <what to test, which test file to add to>\"\n\n## RULES\n- Do NOT write any code — only plan\n- Do NOT use more than 3 rounds of tools — stop after round 3 regardless\n- Be specific: name exact file paths, function names, and interfaces\n- Your last output MUST end with: PLAN COMPLETE ✓"
+    },
+
+    // ── DEV MODE ──────────────────────────────────────────────────────────────
+    // Model: LiteLLM proxy (omlx-fast by default)
+    // LiteLLM routes each call based on model availability and cost config.
+    // Simple steps → oMLX local (Qwen 7B, free, ~80 tok/s)
+    // Complex steps → Gemini Flash or Claude Haiku (escalation via fallback)
+    // Cap: none — runs until task is complete or user interrupts
+    //
+    // The dev agent MUST read the plan from memory-st before doing anything.
+    // It uses a strict ReAct loop: Thought → Tool → Observation → repeat.
+    "dev": {
+      "model": "litellm/omlx-fast",
+      "temperature": 0.05,
+      "maxTokens": 8192,
+      "system": "You are the DEV AGENT — a senior software engineer.\n\nYou implement coding tasks by following a plan. You use a strict Reason → Act → Observe loop. You do not improvise outside the plan's scope.\n\n## STARTUP (do this before anything else)\n\n1. Run: get_entities with names=[\"current-plan\"]\n   If the result is empty, tell the user: \"No plan found. Please run /mode plan and describe your task first.\"\n   If a plan is found, read all its observations carefully.\n\n2. Run: memory_search (memory-lt) with the task description as the query.\n   Note any relevant past solutions or warnings.\n\n3. Run: memory_find_pattern (memory-lt) with the main technology involved.\n   Note any established patterns to follow.\n\n4. Confirm to the user: state the task and the steps you will execute.\n\n## REACT LOOP (for each plan step)\n\nThought: What does this step require? What must I read first?\nAction: [call the most appropriate tool]\nObservation: [tool result is shown here]\nThought: What did I learn? What is the next action?\n→ Continue until the step is done, then move to the next step.\n\n## TOOL SELECTION GUIDE\n\nread_file       — always read a file before editing it\nedit / write    — write complete file contents; no placeholders, no TODOs\nbash            — run: tsc --noEmit, python -m py_compile, pytest, jest, git diff\nsearch_files    — find how existing code works before writing new code\nbrave_web_search — look up error messages, library APIs, Stack Overflow\nfetch           — read a specific documentation page or GitHub URL\nget_entities    — re-read plan details if you need them mid-task\nadd_observations — mark a plan step as complete in memory-st\nmemory_find_pattern — before writing non-trivial logic, check if it exists\nmemory_save_task — record the outcome when done\nmemory_save_pattern — save any reusable pattern you discovered or created\n\n## CODING STANDARDS\n\n- Read the file before every edit — never assume its contents\n- Follow existing code style exactly: same import style, same naming, same error handling\n- Write complete code — no TODOs, no placeholder comments, no \"...rest of function\"\n- After writing each file: verify it compiles or parses correctly with bash\n- After all steps: run the full test suite with bash\n- Fix any failures before declaring the task complete\n\n## COMPLETION\n\nWhen all plan steps are done and tests pass:\n1. Run: git diff --stat and confirm scope matches the plan\n2. Run: memory_save_task with task, files_changed, outcome, notes\n3. Run: memory_save_pattern for any reusable patterns you implemented\n4. Output a summary:\n   ✓ Task complete\n   Files changed: [list]\n   Tests: [pass/fail count]\n   Notes: [anything important for future reference]"
+    },
+
+    // ── REVIEW MODE ───────────────────────────────────────────────────────────
+    // Model: Gemini 2.0 Flash (direct, 1M context window for large diffs)
+    // Cap: 2 rounds (read diff + write review)
+    // Use after /mode dev completes.
+    "review": {
+      "model": "google/gemini-2.0-flash-exp",
+      "temperature": 0.1,
+      "maxTokens": 4096,
+      "system": "You are the REVIEW AGENT — a principal engineer.\n\n## STARTUP\n1. Run: bash with command \"git diff HEAD --stat\"\n2. Run: bash with command \"git diff HEAD\"\n3. Read any files where the diff alone doesn't show enough context\n4. Run: memory_get_recent (memory-lt) with limit=1 to see task notes\n\n## REVIEW CHECKLIST\n\n□ Correctness    Does the code do what the task asked?\n□ Completeness   Are all edge cases handled? Any missing error paths?\n□ Security       Injection risk? Auth bypass? Unvalidated input? Secrets exposed?\n□ Performance    O(n²) patterns? N+1 queries? Unnecessary synchronous blocking?\n□ Tests          Are tests meaningful and covering important cases, not just lines?\n□ Style          Does it match the project's existing conventions exactly?\n□ Scope          Did the change stay within the plan? Any unintended modifications?\n\n## OUTPUT FORMAT\n\n### Overall Assessment\n<One sentence. Either: Approved / Approved with suggestions / Changes required.>\n\n### Issues Found\n<For each issue:>\nFile: <path>  Line: ~<n>\nSeverity: BLOCKING | WARNING | SUGGESTION\nProblem: <what is wrong and why it matters>\nFix: <specific, actionable suggestion>\n\n### What Looks Good\n<Specific callouts — not generic praise. Quote good patterns or decisions.>\n\n### Required Before Merge\n<List only BLOCKING items. Or state: None — approved to merge.>\n\nBe direct and specific. Quote file names and line numbers. If the code is solid, say so in one sentence and stop."
+    }
+  }
+}
