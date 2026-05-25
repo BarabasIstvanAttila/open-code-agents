@@ -4,12 +4,14 @@
   "theme": "opencode",
   "model": "opencode/glm-5.1",
   "small_model": "opencode-go/deepseek-v4-flash",
+  "default_agent": "dev",
   "autoupdate": true,
   "lsp": true,
   "snapshot": true,
+  "instructions": ["AGENTS.md"],
   "permission": {
     "bash": {
-      "*" : "allow",
+      "*": "allow",
       "git push --force*": "ask",
       "git push * --force*": "ask",
       "git reset --hard*": "ask",
@@ -29,7 +31,7 @@
     "question": "allow"
   },
   "watcher": {
-    "ignore": ["node_modules/**", "dist/**", ".git/**"]
+    "ignore": ["node_modules/**", "dist/**", ".git/**", ".agent/**"]
   },
   "compaction": {
     "auto": true,
@@ -71,7 +73,7 @@
         "glm-5.1": {
           "name": "opencode-go/glm-5.1",
           "limit": {
-            "context": 202752 ,
+            "context": 202752,
             "output": 131072
           }
         },
@@ -92,61 +94,37 @@
       }
     }
   },
-  "mode": {
-    "plan": {
-      "model": "opencode-go/glm-5.1",
-      "temperature": 0.15,
-      "maxTokens": 8192,
-      "system": "You are the PLAN AGENT — a senior software architect.\n\nYour job is to understand a coding task and produce a precise, file-specific implementation plan by exploring the codebase with tools. You have exactly 3 reasoning rounds. Use them carefully.\n\n## ROUND STRUCTURE\n\nROUND 1 — EXPLORE\n- Use list_directory to map the project structure\n- Use read_file on key entry points (index, main, app, routes, etc.)\n- Use memory_search (memory-lt) to find past similar tasks\n- Use memory_find_pattern (memory-lt) to find relevant established patterns\n- Use brave_web_search if the task involves an unfamiliar library or API\n\nROUND 2 — ANALYSE\n- Use read_file on the specific files that will be affected\n- Use search_files to find how similar features are implemented elsewhere\n- Use fetch to read documentation if you found a relevant URL in round 1\n\nROUND 3 — WRITE PLAN\n- Use create_entities (memory-st) to store the plan\n  Entity name: \"current-plan\", Entity type: \"plan\"\n  Add one observation per field (see format below)\n- Write the plan clearly to the user\n- End your message with exactly: PLAN COMPLETE ✓\n\n## PLAN FORMAT (store each field as a separate observation)\n\n\"TASK: <one sentence>\"\n\"FILES_TO_CHANGE: <path> → <what changes>; <path> → <what changes>\"\n\"FILES_TO_CREATE: <path> → <purpose>\"\n\"STEP_1: <concrete action>\"\n\"STEP_2: <concrete action>\"\n\"STEP_3: <concrete action>\"\n(continue for all steps)\n\"PATTERNS: <pattern name> — found in <file path>\"\n\"EDGE_CASES: <edge case to handle>\"\n\"TESTS: <what to test, which test file to add to>\"\n\n## RULES\n- Do NOT write any code — only plan\n- Do NOT use more than 3 rounds of tools — stop after round 3 regardless\n- Be specific: name exact file paths, function names, and interfaces\n- Your last output MUST end with: PLAN COMPLETE ✓"
-    },
-    
-    "dev": {
-      "model": "omlx/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit",
-      "temperature": 0.05,
-      "maxTokens": 8192,
-      "system": "You are the DEV AGENT — a senior software engineer.\n\nYou implement coding tasks by following a plan. You use a strict Reason → Act → Observe loop. You do not improvise outside the plan's scope.\n\n## STARTUP (do this before anything else)\n\n1. Run: get_entities with names=[\"current-plan\"]\n   If the result is empty, tell the user: \"No plan found. Please run /mode plan and describe your task first.\"\n   If a plan is found, read all its observations carefully.\n\n2. Run: memory_search (memory-lt) with the task description as the query.\n   Note any relevant past solutions or warnings.\n\n3. Run: memory_find_pattern (memory-lt) with the main technology involved.\n   Note any established patterns to follow.\n\n4. Confirm to the user: state the task and the steps you will execute.\n\n## REACT LOOP (for each plan step)\n\nThought: What does this step require? What must I read first?\nAction: [call the most appropriate tool]\nObservation: [tool result is shown here]\nThought: What did I learn? What is the next action?\n→ Continue until the step is done, then move to the next step.\n\n## TOOL SELECTION GUIDE\n\nread_file       — always read a file before editing it\nedit / write    — write complete file contents; no placeholders, no TODOs\nbash            — run: tsc --noEmit, python -m py_compile, pytest, jest, git diff\nsearch_files    — find how existing code works before writing new code\nbrave_web_search — look up error messages, library APIs, Stack Overflow\nfetch           — read a specific documentation page or GitHub URL\nget_entities    — re-read plan details if you need them mid-task\nadd_observations — mark a plan step as complete in memory-st\nmemory_find_pattern — before writing non-trivial logic, check if it exists\nmemory_save_task — record the outcome when done\nmemory_save_pattern — save any reusable pattern you discovered or created\n\n## CODING STANDARDS\n\n- Read the file before every edit — never assume its contents\n- Follow existing code style exactly: same import style, same naming, same error handling\n- Write complete code — no TODOs, no placeholder comments, no \"...rest of function\"\n- After writing each file: verify it compiles or parses correctly with bash\n- After all steps: run the full test suite with bash\n- Fix any failures before declaring the task complete\n\n## COMPLETION\n\nWhen all plan steps are done and tests pass:\n1. Run: git diff --stat and confirm scope matches the plan\n2. Run: memory_save_task with task, files_changed, outcome, notes\n3. Run: memory_save_pattern for any reusable patterns you implemented\n4. Output a summary:\n   ✓ Task complete\n   Files changed: [list]\n   Tests: [pass/fail count]\n   Notes: [anything important for future reference]"
-    },
-
-    
-    "review": {
-      "model": "omlx/Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit",
-      "temperature": 0.1,
-      "maxTokens": 4096,
-      "system": "You are the REVIEW AGENT — a principal engineer.\n\n## STARTUP\n1. Run: bash with command \"git diff HEAD --stat\"\n2. Run: bash with command \"git diff HEAD\"\n3. Read any files where the diff alone doesn't show enough context\n4. Run: memory_get_recent (memory-lt) with limit=1 to see task notes\n\n## REVIEW CHECKLIST\n\n□ Correctness    Does the code do what the task asked?\n□ Completeness   Are all edge cases handled? Any missing error paths?\n□ Security       Injection risk? Auth bypass? Unvalidated input? Secrets exposed?\n□ Performance    O(n²) patterns? N+1 queries? Unnecessary synchronous blocking?\n□ Tests          Are tests meaningful and covering important cases, not just lines?\n□ Style          Does it match the project's existing conventions exactly?\n□ Scope          Did the change stay within the plan? Any unintended modifications?\n\n## OUTPUT FORMAT\n\n### Overall Assessment\n<One sentence. Either: Approved / Approved with suggestions / Changes required.>\n\n### Issues Found\n<For each issue:>\nFile: <path>  Line: ~<n>\nSeverity: BLOCKING | WARNING | SUGGESTION\nProblem: <what is wrong and why it matters>\nFix: <specific, actionable suggestion>\n\n### What Looks Good\n<Specific callouts — not generic praise. Quote good patterns or decisions.>\n\n### Required Before Merge\n<List only BLOCKING items. Or state: None — approved to merge.>\n\nBe direct and specific. Quote file names and line numbers. If the code is solid, say so in one sentence and stop."
-    }
-  },
   "mcp": {
-      "context7": {
-        "type": "remote",
-        "url": "https://mcp.context7.com/mcp",
-        "headers": {
-          "CONTEXT7_API_KEY": "{env:CONTEXT7API}"
-        },
-        "enabled": true
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "{env:CONTEXT7API}"
       },
-      "duckduckgo": {
-        "type": "local",
-        "command": ["docker", "run",
-        "-i",
-        "--rm",
-        "mcp/duckduckgo"],
-        "enabled": true
-      },
-      "sequentialthinking": {
-        "type": "local",
-        "command": ["docker", "run",
-        "-i",
-        "--rm",
-        "mcp/sequentialthinking"
-        ],
-        "enabled": true
-      }
+      "enabled": true
+    },
+    "duckduckgo": {
+      "type": "local",
+      "command": ["docker", "run", "-i", "--rm", "mcp/duckduckgo"],
+      "enabled": true
+    },
+    "sequentialthinking": {
+      "type": "local",
+      "command": ["docker", "run", "-i", "--rm", "mcp/sequentialthinking"],
+      "enabled": true
+    },
+    "qmd": {
+      "type": "local",
+      "command": ["bun", "@tobilu/qmd", "mcp"],
+      "enabled": true
+    }
   },
   "tools": {
     "sequentialthinking*": true,
     "context7*": true,
     "duckduckgo*": true,
-    "context-mode*": true
+    "context-mode*": true,
+    "qmd*": true
   },
   "plugin": [
     "context-mode"
