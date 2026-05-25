@@ -32,3 +32,15 @@ Mac Env variables: https://phoenixnap.com/kb/set-environment-variable-mac
 env variable added reload zshrc: source ~/.zshrc
 
 Open Code models: https://opencode.ai/docs/go/
+
+
+Plugins:
+Requirements: https://bun.com/docs/installation
+
+Context Mode: https://github.com/mksglu/context-mode
+
+
+*micode
+Requires: https://github.com/Aureatus/opencode-ast-grep
+Requires: https://github.com/davis7dotsh/better-context
+Install: bun add -g btca

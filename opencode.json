@@ -1,16 +1,40 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "autoshare": false,
+  "theme": "opencode",
+  "model": "opencode/glm-5.1",
+  "small_model": "opencode-go/deepseek-v4-flash",
+  "autoupdate": true,
+  "lsp": true,
+  "snapshot": true,
   "permission": {
-    "bash": "allow",
+    "bash": {
+      "*" : "allow",
+      "git push --force*": "ask",
+      "git push * --force*": "ask",
+      "git reset --hard*": "ask",
+      "rm -rf *": "deny",
+      "rm *": "deny"
+    },
     "edit": "allow",
     "read": "allow",
     "grep": "allow",
     "glob": "allow",
     "lsp": "allow",
+    "skill": "allow",
+    "task": "allow",
     "todowrite": "allow",
     "webfetch": "allow",
     "websearch": "allow",
     "question": "allow"
+  },
+  "watcher": {
+    "ignore": ["node_modules/**", "dist/**", ".git/**"]
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 10000
   },
   "server": {
     "port": 4096,
@@ -68,9 +92,6 @@
       }
     }
   },
-  "autoshare": false,
-  "theme": "opencode",
-  "model": "opencode/glm-5.1",
   "mode": {
     "plan": {
       "model": "opencode-go/glm-5.1",
@@ -94,7 +115,7 @@
       "system": "You are the REVIEW AGENT — a principal engineer.\n\n## STARTUP\n1. Run: bash with command \"git diff HEAD --stat\"\n2. Run: bash with command \"git diff HEAD\"\n3. Read any files where the diff alone doesn't show enough context\n4. Run: memory_get_recent (memory-lt) with limit=1 to see task notes\n\n## REVIEW CHECKLIST\n\n□ Correctness    Does the code do what the task asked?\n□ Completeness   Are all edge cases handled? Any missing error paths?\n□ Security       Injection risk? Auth bypass? Unvalidated input? Secrets exposed?\n□ Performance    O(n²) patterns? N+1 queries? Unnecessary synchronous blocking?\n□ Tests          Are tests meaningful and covering important cases, not just lines?\n□ Style          Does it match the project's existing conventions exactly?\n□ Scope          Did the change stay within the plan? Any unintended modifications?\n\n## OUTPUT FORMAT\n\n### Overall Assessment\n<One sentence. Either: Approved / Approved with suggestions / Changes required.>\n\n### Issues Found\n<For each issue:>\nFile: <path>  Line: ~<n>\nSeverity: BLOCKING | WARNING | SUGGESTION\nProblem: <what is wrong and why it matters>\nFix: <specific, actionable suggestion>\n\n### What Looks Good\n<Specific callouts — not generic praise. Quote good patterns or decisions.>\n\n### Required Before Merge\n<List only BLOCKING items. Or state: None — approved to merge.>\n\nBe direct and specific. Quote file names and line numbers. If the code is solid, say so in one sentence and stop."
     }
   },
-    "mcp": {
+  "mcp": {
       "context7": {
         "type": "remote",
         "url": "https://mcp.context7.com/mcp",
@@ -120,5 +141,8 @@
         ],
         "enabled": true
       }
-    }
+    },
+  "plugin": [
+    "context-mode"
+  ]
 }
