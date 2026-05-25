@@ -29,6 +29,6 @@ https://hub.docker.com/mcp/server/git/overview
 
 
 Mac Env variables: https://phoenixnap.com/kb/set-environment-variable-mac
-env variable added zshrc: source ~/.zshrc
+env variable added reload zshrc: source ~/.zshrc
 
 Open Code models: https://opencode.ai/docs/go/
