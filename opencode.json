@@ -55,8 +55,8 @@
         "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit": {
           "name": "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit",
           "limit": {
-            "context": 32768,
-            "output": 32768
+            "context": 262144,
+            "output": 131072
           }
         }
       }
@@ -71,8 +71,8 @@
         "glm-5.1": {
           "name": "opencode-go/glm-5.1",
           "limit": {
-            "context": 32768,
-            "output": 8192
+            "context": 202752 ,
+            "output": 131072
           }
         },
         "nemotron-3-super-free": {
@@ -141,7 +141,13 @@
         ],
         "enabled": true
       }
-    },
+  },
+  "tools": {
+    "sequentialthinking*": true,
+    "context7*": true,
+    "duckduckgo*": true,
+    "context-mode*": true
+  },
   "plugin": [
     "context-mode"
   ]

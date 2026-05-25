@@ -36,11 +36,11 @@ Open Code models: https://opencode.ai/docs/go/
 
 Plugins:
 Requirements: https://bun.com/docs/installation
-
 Context Mode: https://github.com/mksglu/context-mode
+Location: Home/.cache
 
 
-*micode
-Requires: https://github.com/Aureatus/opencode-ast-grep
-Requires: https://github.com/davis7dotsh/better-context
-Install: bun add -g btca
+Next:
+https://github.com/tobi/qmd
+https://github.com/jellydn/logpilot
+https://github.com/supermemoryai/opencode-supermemory ??
