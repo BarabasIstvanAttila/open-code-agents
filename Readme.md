@@ -44,3 +44,12 @@ Next:
 https://github.com/tobi/qmd
 https://github.com/jellydn/logpilot
 https://github.com/supermemoryai/opencode-supermemory ??
+
+LSP
+https://opencode.ai/docs/lsp/
+"lsp": {
+    "cpp-server": {
+      "command": ["clangd"],
+      "extensions": [".cpp", ".h"]
+    }
+  }
