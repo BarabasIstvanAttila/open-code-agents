@@ -1,37 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "=== qmd Collection Setup ==="
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+QMD_CMD="bunx @tobilu/qmd"
+
+echo "=== qmd Project-Local Setup ==="
+echo "Project: ${PROJECT_DIR}"
 echo ""
 
-QMD_DIR="${HOME}/.config/qmd/memory"
+echo "Initializing project-local qmd index..."
+cd "${PROJECT_DIR}"
+${QMD_CMD} init
 
-mkdir -p "${QMD_DIR}/tasks"
-mkdir -p "${QMD_DIR}/patterns"
-mkdir -p "${QMD_DIR}/plans"
-mkdir -p "${QMD_DIR}/research"
+MEMORY_DIR="${PROJECT_DIR}/memory"
 
-echo "Created directories:"
-echo "  ${QMD_DIR}/tasks/"
-echo "  ${QMD_DIR}/patterns/"
-echo "  ${QMD_DIR}/plans/"
-echo "  ${QMD_DIR}/research/"
+mkdir -p "${MEMORY_DIR}/tasks"
+mkdir -p "${MEMORY_DIR}/patterns"
+mkdir -p "${MEMORY_DIR}/plans"
+mkdir -p "${MEMORY_DIR}/research"
+
+echo "Created memory directories:"
+echo "  ${MEMORY_DIR}/tasks/"
+echo "  ${MEMORY_DIR}/patterns/"
+echo "  ${MEMORY_DIR}/plans/"
+echo "  ${MEMORY_DIR}/research/"
+echo ""
+
+mkdir -p "${PROJECT_DIR}/.agent"
+echo "Created .agent/ directory"
 echo ""
 
 echo "Creating qmd collections..."
 
-qmd collection create tasks "${QMD_DIR}/tasks" 2>/dev/null || echo "  Collection 'tasks' may already exist — skipping"
-qmd collection create patterns "${QMD_DIR}/patterns" 2>/dev/null || echo "  Collection 'patterns' may already exist — skipping"
-qmd collection create plans "${QMD_DIR}/plans" 2>/dev/null || echo "  Collection 'plans' may already exist — skipping"
-qmd collection create research "${QMD_DIR}/research" 2>/dev/null || echo "  Collection 'research' may already exist — skipping"
+${QMD_CMD} collection add "${MEMORY_DIR}/tasks" --name tasks 2>/dev/null || echo "  Collection 'tasks' may already exist — skipping"
+${QMD_CMD} collection add "${MEMORY_DIR}/patterns" --name patterns 2>/dev/null || echo "  Collection 'patterns' may already exist — skipping"
+${QMD_CMD} collection add "${MEMORY_DIR}/plans" --name plans 2>/dev/null || echo "  Collection 'plans' may already exist — skipping"
+${QMD_CMD} collection add "${MEMORY_DIR}/research" --name research 2>/dev/null || echo "  Collection 'research' may already exist — skipping"
 
 echo ""
 echo "Generating initial embeddings (may take 1-2 min on first run)..."
-qmd embed
+${QMD_CMD} embed
 
 echo ""
 echo "=== qmd Status ==="
-qmd status
+${QMD_CMD} status
 
 echo ""
 echo "=== Setup Complete ==="
+echo ""
+echo "Project-local layout:"
+echo "  .qmd/index.yaml    — qmd config"
+echo "  .qmd/index.sqlite  — search index"
+echo "  memory/tasks/      — task summaries"
+echo "  memory/patterns/   — code patterns"
+echo "  memory/plans/      — archived plans"
+echo "  memory/research/   — archived research"
+echo "  .agent/            — agent working files"

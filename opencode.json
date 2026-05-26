@@ -115,7 +115,7 @@
     },
     "qmd": {
       "type": "local",
-      "command": ["bun", "@tobilu/qmd", "mcp"],
+      "command": ["bunx", "@tobilu/qmd", "mcp"],
       "enabled": true
     }
   },

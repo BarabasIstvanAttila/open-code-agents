@@ -58,12 +58,14 @@ QA and mem can also be invoked as subagents by the dev agent when configured.
 ### Persistent memory (written by mem, indexed by qmd)
 
 ```
-~/.config/qmd/memory/
+memory/                    ← project-local (versioned with repo)
 ├── tasks/               ← task summaries
 ├── patterns/            ← code patterns
 ├── plans/               ← archived plans
 └── research/            ← archived research
 ```
+
+Index and config stored in project-local `.qmd/` (gitignored, auto-created by `bunx @tobilu/qmd init`).
 
 ---
 
@@ -92,7 +94,8 @@ QA and mem can also be invoked as subagents by the dev agent when configured.
    │                        MANDATORY — all agents route I/O through this
    │
    ├─ qmd MCP ──────────── local semantic search (query, get, multi_get, status)
-   │                        ~/.config/qmd/memory/  ← persistent knowledge base
+   │                        memory/  ← project-local knowledge base (versioned)
+   │                        .qmd/    ← project-local index (gitignored)
    │                        qmd-collections: tasks, patterns, plans, research
    │
    ├─ context7 MCP ─────── library documentation lookup
@@ -222,10 +225,10 @@ qmd is a local semantic search engine with BM25 + vector + LLM reranking. It acc
 
 | Collection | Path | Contains |
 |------------|------|----------|
-| `tasks` | `~/.config/qmd/memory/tasks/` | Task summaries (written by mem) |
-| `patterns` | `~/.config/qmd/memory/patterns/` | Code patterns (written by mem) |
-| `plans` | `~/.config/qmd/memory/plans/` | Archived plans (written by mem) |
-| `research` | `~/.config/qmd/memory/research/` | Archived research (written by mem) |
+| `tasks` | `memory/tasks/` | Task summaries (written by mem) |
+| `patterns` | `memory/patterns/` | Code patterns (written by mem) |
+| `plans` | `memory/plans/` | Archived plans (written by mem) |
+| `research` | `memory/research/` | Archived research (written by mem) |
 
 ### How qmd grows smarter
 
@@ -312,7 +315,7 @@ Always available regardless of MCP servers.
 | Node.js | 20+ | `brew install node` |
 | bun | latest | `curl -fsSL https://bun.sh/install \| bash` |
 | OpenCode | latest | `npm install -g opencode-ai` |
-| qmd | latest | `npm install -g @tobilu/qmd` |
+| qmd | latest | `npm install -g @tobilu/qmd` or `bun install -g @tobilu/qmd` |
 | context-mode MCP | — | follow context-mode MCP server setup |
 
 ### Environment variables
@@ -336,8 +339,8 @@ echo 'export CONTEXT7API="your-key-here"' >> ~/.zshrc
 ### Initial setup
 
 ```bash
-# 1. Install qmd and create collections
-npm install -g @tobilu/qmd
+# 1. Install qmd and create project-local collections
+bun install -g @tobilu/qmd
 chmod +x scripts/qmd-setup.sh
 ./scripts/qmd-setup.sh
 
@@ -373,7 +376,7 @@ chmod +x scripts/check-services.sh
 | `.opencode/agent/qa.md` | QA subagent definition (validation) |
 | `.opencode/agent/mem.md` | Mem subagent definition (memory commit) |
 | `.env.example` | Environment variable template |
-| `scripts/qmd-setup.sh` | Create qmd collections and initial config |
+| `scripts/qmd-setup.sh` | Create qmd project-local index and collections |
 | `scripts/check-services.sh` | Verify all services are healthy |
 | `start.sh` | Start opencode with EXA enabled |
 
@@ -386,4 +389,4 @@ chmod +x scripts/check-services.sh
 - **Cloud model**: opencode-go/glm-5.1 for plan agent (cost-controlled, 3-round cap)
 - **Agent modes**: scout/plan/dev = primary (user-switchable via /mode), qa/mem = subagent (invoked automatically)
 - **context-mode**: Plugin + MCP tool routing — all I/O goes through sandbox
-- **qmd**: Bun-based MCP server (`bun @tobilu/qmd mcp`) for persistent semantic memory
+- **qmd**: Bun-based MCP server (`bunx @tobilu/qmd mcp`) for persistent semantic memory. Project-local: `.qmd/` (index, gitignored) + `memory/` (collections, versioned)
