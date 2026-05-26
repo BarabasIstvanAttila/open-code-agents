@@ -258,6 +258,216 @@ See [opencode.json](./opencode.json) for the complete configuration.
 
 ---
 
+## 📦 Using as a Git Submodule
+
+LocalAi is designed to be shared across multiple projects as a **git submodule**. This lets you maintain a single source of truth for agent definitions, MCP server config, and tool routing rules while allowing each project to override settings as needed.
+
+### How It Works
+
+```
+your-project/
+├── .localai/                  ← git submodule (this repo)
+│   ├── opencode.json          ← base config (shared)
+│   ├── AGENTS.md              ← agent pipeline rules (shared)
+│   ├── .opencode/             ← agent & skill definitions (shared)
+│   ├── scripts/               ← setup scripts (shared)
+│   └── ...
+├── opencode.json              ← project-specific overrides (yours)
+├── AGENTS.md                  ← project-specific instructions (yours, optional)
+└── src/                       ← your actual project code
+```
+
+OpenCode loads config in priority order — **later sources override earlier ones**:
+
+```
+Remote config → Global config → OPENCODE_CONFIG env → Project opencode.json → .opencode/ dirs → Inline env
+```
+
+This means your project's `opencode.json` can selectively override provider settings, add project-specific agents, or change permissions while inheriting everything else from the submodule.
+
+### Step 1: Add the Submodule
+
+```bash
+# From your project root
+git submodule add https://github.com/<your-username>/LocalAi.git .localai
+git commit -m "Add LocalAi as submodule"
+```
+
+### Step 2: Create a Project-Level opencode.json
+
+Create an `opencode.json` in your project root that **extends** the submodule's base config:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [".localai/AGENTS.md", "AGENTS.md"],
+  "provider": {
+    "omlx": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "oMLX",
+      "options": {
+        "baseURL": "http://127.0.0.1:8005/v1",
+        "apiKey": "{env:OMLX_API_KEY}"
+      },
+      "models": {
+        "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit": {
+          "name": "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit",
+          "limit": { "context": 262144, "output": 131072 }
+        }
+      }
+    }
+  },
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": { "CONTEXT7_API_KEY": "{env:CONTEXT7API}" },
+      "enabled": true
+    },
+    "duckduckgo": {
+      "type": "local",
+      "command": ["docker", "run", "-i", "--rm", "mcp/duckduckgo"],
+      "enabled": true
+    },
+    "sequentialthinking": {
+      "type": "local",
+      "command": ["docker", "run", "-i", "--rm", "mcp/sequentialthinking"],
+      "enabled": true
+    },
+    "qmd": {
+      "type": "local",
+      "command": ["bun", "@tobilu/qmd", "mcp"],
+      "enabled": true
+    }
+  },
+  "tools": {
+    "sequentialthinking*": true,
+    "context7*": true,
+    "duckduckgo*": true,
+    "context-mode*": true,
+    "qmd*": true
+  },
+  "plugin": ["context-mode"]
+}
+```
+
+### Step 3: Link Agent Definitions
+
+OpenCode discovers agents from `.opencode/agent/` relative to the working directory. Symlink the submodule's agents into your project:
+
+```bash
+# Create the agent directory in your project
+mkdir -p .opencode/agent
+
+# Symlink all agent definitions from the submodule
+ln -sf ../../.localai/.opencode/agent/scout.md .opencode/agent/scout.md
+ln -sf ../../.localai/.opencode/agent/plan.md  .opencode/agent/plan.md
+ln -sf ../../.localai/.opencode/agent/dev.md   .opencode/agent/dev.md
+ln -sf ../../.localai/.opencode/agent/qa.md    .opencode/agent/qa.md
+ln -sf ../../.localai/.opencode/agent/mem.md   .opencode/agent/mem.md
+
+# Symlink shared skills
+ln -sf ../.localai/.opencode/skills .opencode/skills
+```
+
+### Step 4: Create Project-Specific AGENTS.md (Optional)
+
+Add a project-level `AGENTS.md` in your project root with project-specific instructions:
+
+```markdown
+# My Project — Agent Instructions
+
+## Project Context
+This is a Node.js REST API using Express + PostgreSQL.
+
+## Conventions
+- Use TypeScript strict mode
+- Follow existing file naming: kebab-case
+- Tests go in `__tests__/` alongside source files
+- Run `npm test` before committing
+
+## Architecture
+- `src/routes/` — Express route handlers
+- `src/services/` — Business logic
+- `src/models/` — Database models
+- `src/middleware/` — Express middleware
+```
+
+OpenCode reads both `.localai/AGENTS.md` (shared pipeline rules) and your project's `AGENTS.md` (project context).
+
+### Step 5: Environment Setup
+
+```bash
+# Run the submodule's setup scripts
+chmod +x .localai/scripts/qmd-setup.sh
+.localai/scripts/qmd-setup.sh
+
+chmod +x .localai/scripts/check-services.sh
+.localai/scripts/check-services.sh
+```
+
+### Integration Strategies Compared
+
+| Strategy | Pros | Cons | Best For |
+|----------|------|------|----------|
+| **Submodule + Symlinks** | Auto-updates from upstream, single source of truth | Symlinks can break on Windows | Mac/Linux teams sharing config |
+| **Submodule + `OPENCODE_CONFIG`** | No symlinks needed, explicit config path | Must set env var per project | Simpler setups, CI environments |
+| **Copy files** | Full control, no git coupling | No auto-updates, drift risk | One-off projects, custom setups |
+
+### Strategy B: Using `OPENCODE_CONFIG` Env Var
+
+If you prefer not to use symlinks, point OpenCode directly at the submodule's config:
+
+```bash
+# Add to your project's .envrc (direnv) or .zshrc
+export OPENCODE_CONFIG="./.localai/opencode.json"
+export OPENCODE_CONFIG_CONTENT='{"instructions":[".localai/AGENTS.md","AGENTS.md"]}'
+```
+
+Then start OpenCode normally:
+
+```bash
+opencode
+```
+
+### Cloning a Project That Uses This Submodule
+
+```bash
+# Clone with submodules
+git clone --recurse-submodules <your-project-url>
+
+# Or if already cloned
+git submodule init
+git submodule update
+```
+
+### Updating the Submodule
+
+When LocalAi receives updates and you want to pull them:
+
+```bash
+# Update to latest on the default branch
+git submodule update --remote .localai
+
+# Or update to a specific tag/branch
+cd .localai
+git checkout v2.0.0
+cd ..
+git add .localai
+git commit -m "Update LocalAi submodule to v2.0.0"
+```
+
+### Removing the Submodule
+
+```bash
+git submodule deinit -f .localai
+rm -rf .git/modules/.localai
+git rm -f .localai
+git commit -m "Remove LocalAi submodule"
+```
+
+---
+
 ## 🔐 Security & Privacy
 
 - **Local inference**: All agent reasoning runs locally via oMLX
