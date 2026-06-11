@@ -53,3 +53,9 @@ https://opencode.ai/docs/lsp/
       "extensions": [".cpp", ".h"]
     }
   }
+
+
+  TODO: 
+  Add gemma, 
+  Add KIMI
+  

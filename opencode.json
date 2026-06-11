@@ -36,7 +36,7 @@
   "compaction": {
     "auto": true,
     "prune": true,
-    "reserved": 10000
+    "reserved": 4000
   },
   "server": {
     "port": 4096,
@@ -54,11 +54,11 @@
         "apiKey": "{env:OMLX_API_KEY}"
       },
       "models": {
-        "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit": {
-          "name": "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit",
+        "Qwen3.5-9B-OptiQ-4bit": {
+          "name": "Qwen3.5-9B-OptiQ-4bit",
           "limit": {
-            "context": 262144,
-            "output": 131072
+            "context": 32768,
+            "output": 4096
           }
         }
       }

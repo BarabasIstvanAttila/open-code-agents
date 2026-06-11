@@ -1,3 +1,10 @@
 *.secrets/
 .qmd/
 .agent/
+.env
+node_modules/
+.DS_Store
+memory/tasks/
+memory/patterns/
+memory/plans/
+memory/research/
