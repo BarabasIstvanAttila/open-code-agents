@@ -1,7 +1,7 @@
 ---
 name: dev
 description: Implementation agent. Follows the plan from .agent/plan.md and implements each step using a strict ReAct loop. Use /mode dev after Plan completes.
-model: omlx/Qwen3.5-9B-OptiQ-4bit
+model: omlx/gemma-4-e4b-it-4bit
 mode: primary
 temperature: 0.05
 permission:

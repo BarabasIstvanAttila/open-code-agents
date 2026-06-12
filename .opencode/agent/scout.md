@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Research agent. Gathers context, maps codebase, fetches docs, produces research report in .agent/research-report.md. Use /mode scout before planning any non-trivial task.
-model: omlx/Qwen3.5-9B-OptiQ-4bit
+model: opencode-go/glm-5.1
 mode: primary
 temperature: 0.3
 permission:

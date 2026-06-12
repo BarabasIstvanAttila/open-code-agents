@@ -48,7 +48,7 @@ chmod +x scripts/check-services.sh
 ## Expected service check output
 
 ```
-✓ oMLX              localhost:8005  (Qwen3.5-9B-OptiQ-4bit)
+✓ oMLX              localhost:8005  (gemma-4-e4b-it-4bit)
 ✓ qmd               status ok       (4 collections)
 ✓ context-mode      binary found
 ✓ bun               binary found
@@ -62,7 +62,7 @@ chmod +x scripts/check-services.sh
 1. Open oMLX admin dashboard: http://127.0.0.1:8005/admin
 2. Enable **Context Scaling** (Claude Code Optimization) — this makes oMLX report a larger context to OpenCode so compaction triggers before the real limit is hit
 3. Set **Memory Limit (Models Only)** to ~20GB — leaves headroom for macOS and other processes
-4. Download the **Qwen3.5-9B-OptiQ-4bit** model if not already available
+4. Download the **gemma-4-e4b-it-4bit** model if not already available
 
 ## Configuration Files
 
@@ -79,3 +79,24 @@ chmod +x scripts/check-services.sh
 | `scripts/qmd-setup.sh` | Create qmd project-local index and collections |
 | `scripts/check-services.sh` | Verify all services are healthy |
 | `start.sh` | Start opencode with EXA enabled |
+
+---
+
+## Key Decisions & Learnings
+
+- **oMLX port**: 8005 (matches actual running instance)
+- **Local model**: gemma-4-e4b-it-4bit for all local agents (via oMLX, fits 32GB Mac at 32k context)
+- **Cloud models**: opencode-go/qwen3.7-plus for plan, opencode-go/deepseek-v4-flash for builder (cost-controlled)
+- **Context limits**: 32768 context / 8192 output for local model, compaction reserved 4000
+- **oMLX context scaling**: Must be enabled in admin dashboard (http://127.0.0.1:8005/admin) — Claude Code Optimization
+- **context-mode**: Plugin + MCP tool routing — all I/O goes through sandbox
+- **qmd**: Bun-based MCP server (`bunx @tobilu/qmd mcp`) for persistent semantic memory
+
+---
+
+## oMLX Integration Notes
+
+- **Context scaling**: Enable in oMLX admin dashboard → Claude Code Optimization. This makes oMLX report a larger context to OpenCode so compaction triggers before the real limit is hit.
+- **Memory limit**: Set Memory Limit (Models Only) to ~20GB in oMLX admin dashboard.
+- **Prefill behavior**: MLX performs full prefill before emitting tokens. Time-to-first-token rises linearly with input length. Keep system prompt small.
+- **KV cache**: Memory scales linearly with configured context limit. gemma-4-e4b-it-4bit at 32k context uses ~4-6 GB KV cache (fits in 32GB Mac).

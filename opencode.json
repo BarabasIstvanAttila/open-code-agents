@@ -2,7 +2,7 @@
   "$schema": "https://opencode.ai/config.json",
   "autoshare": false,
   "theme": "opencode",
-  "model": "opencode/glm-5.1",
+  "model": "omlx/gemma-4-e4b-it-4bit",
   "small_model": "opencode-go/deepseek-v4-flash",
   "default_agent": "dev",
   "autoupdate": true,
@@ -35,8 +35,7 @@
   },
   "compaction": {
     "auto": true,
-    "prune": true,
-    "reserved": 4000
+    "prune": true
   },
   "server": {
     "port": 4096,
@@ -58,7 +57,14 @@
           "name": "Qwen3.5-9B-OptiQ-4bit",
           "limit": {
             "context": 32768,
-            "output": 4096
+            "output": 8192
+          }
+        },
+        "gemma-4-e4b-it-4bit": {
+          "name": "gemma-4-e4b-it-4bit",
+          "limit": {
+            "context": 32768,
+            "output": 8192
           }
         }
       }
@@ -75,6 +81,20 @@
           "limit": {
             "context": 202752,
             "output": 131072
+          }
+        },
+        "qwen3.7-plus": {
+          "name": "opencode-go/qwen3.7-plus",
+          "limit": {
+            "context": 202752,
+            "output": 131072
+          }
+        },
+        "deepseek-v4-flash": {
+          "name": "opencode-go/deepseek-v4-flash",
+          "limit": {
+            "context": 32768,
+            "output": 8192
           }
         },
         "nemotron-3-super-free": {
