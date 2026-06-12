@@ -31,8 +31,37 @@
     "question": "allow"
   },
   "watcher": {
-    "ignore": ["node_modules/**", "dist/**", ".git/**", ".agent/**"]
+    "ignore": [
+      "node_modules/**",
+      "dist/**",
+      ".git/**",
+      ".agent/**",
+      "build/**",
+      "managed_components/**",
+      "sdkconfig.old",
+      "dependencies.lock"
+    ]
   },
+  "lsp": {
+    "clangd": {
+      "command": [
+        "/Users/atti/.espressif/tools/esp-clang/esp-18.1.2_20240912/esp-clang/bin/clangd",
+        "--background-index",
+        "--clang-tidy",
+        "--completion-style=detailed",
+        "--header-insertion=never",
+        "--query-driver=/Users/atti/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp-elf-*-gcc",
+        "--compile-commands-dir=build"
+      ],
+      "env": {
+        "IDF_PATH": "/Users/atti/esp/esp-idf"
+      },
+      "extensions": [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh"]
+    }
+  },
+
+  "shell": ".opencode/esp-shell.sh",
+
   "compaction": {
     "auto": true,
     "prune": true

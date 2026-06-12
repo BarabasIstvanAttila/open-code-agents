@@ -402,14 +402,19 @@ open-code-agents/
 │   │   ├── qa.md                ← QA validation agent definition
 │   │   └── mem.md               ← Memory agent definition
 │   ├── skills/
-│   │   └── skill-builder/       ← Skill creation skill
+│   │   ├── skill-builder/       ← Skill creation skill
+│   │   ├── esp32-idf/           ← ESP-IDF toolchain skill
+│   │   └── esp32-patterns/      ← ESP32 patterns skill
 │   ├── .gitignore               ← Ignore node_modules in .opencode
 │   └── package.json             ← Plugin dependencies (context-mode)
 ├── scripts/
 │   ├── init-submodule.sh        ← Initialize as submodule in a parent project
+│   ├── init-esp32.sh            ← Initialize ESP-IDF project with LSP support
 │   ├── update-submodule.sh      ← Update submodule to latest version
 │   ├── check-services.sh        ← Verify all services are running
-│   └── qmd-setup.sh             ← Initialize qmd collections and index
+│   ├── check-esp32.sh           ← Verify ESP-IDF + LSP environment
+│   ├── qmd-setup.sh             ← Initialize qmd collections and index
+│   └── start.sh                 ← Start opencode with EXA enabled
 ├── .secrets/                    ← Secret files (gitignored)
 ├── memory/                      ← Persistent AI memory collections
 └── .agent/                      ← Agent working files (gitignored)
@@ -430,6 +435,48 @@ When you add this project as a submodule and run `init-submodule.sh`:
 4. **context-mode plugin** enforces I/O routing rules — all large reads go through a sandbox to prevent context window flooding.
 
 5. **qmd** builds a persistent semantic search index in `.qmd/` that grows smarter over sessions. After 5+ tasks, the scout agent finds relevant past patterns in under 10 seconds.
+
+---
+
+## ESP32/ESP-IDF Development
+
+This agent system supports ESP32 development with full LSP integration through `esp-clangd`.
+
+### Quick Start
+
+```bash
+# In your ESP-IDF project directory:
+. $IDF_PATH/export.sh
+bash path/to/local-ai/scripts/init-esp32.sh
+opencode
+```
+
+### Features
+
+- **LSP via esp-clangd** — cross-compiler-aware (Xtensa + RISC-V), provides diagnostics without full build
+- **Two domain skills**: `esp32-idf` (toolchain) and `esp32-patterns` (FreeRTOS, drivers, NVS, C++ idioms)
+- **Auto-generated `compile_commands.json`** — refresh with `idf.py reconfigure`
+- **IDF-aware shell wrapper** — every agent bash command has ESP-IDF environment pre-sourced
+- **Custom slash commands** — `/esp-build`, `/esp-check`, `/esp-flash`, `/esp-size`, `/esp-new-component`
+
+### Available Skills
+
+| Skill | Description | When to load |
+|-------|-------------|--------------|
+| `esp32-idf` | Toolchain ops: idf.py, LSP triage, build/flash/debug | Running build commands, interpreting errors |
+| `esp32-patterns` | Domain patterns: FreeRTOS, GPIO, SPI/I2C, NVS, C++ | Designing components, writing drivers |
+
+### Signal Trust Order
+
+1. `idf.py build` output → ground truth
+2. `idf.py monitor` output → runtime truth
+3. LSP diagnostics → fast edit-time signal (may be stale)
+
+### Safety Rules
+
+- Never mark a task done without a clean `idf.py build`
+- Never edit files in `build/` or `managed_components/`
+- `idf.py flash` and `idf.py erase_flash` require user confirmation
 
 ---
 

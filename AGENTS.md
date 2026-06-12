@@ -121,6 +121,58 @@ Coder subagents have **no MCP tools** (no context7, duckduckgo, sequentialthinki
 
 ---
 
+## ESP32 / ESP-IDF Development
+
+When working on ESP-IDF projects, two domain skills are available to all agents:
+
+- `esp32-idf` — Toolchain ops: idf.py commands, LSP interpretation, build/flash/debug
+- `esp32-patterns` — Domain patterns: FreeRTOS, GPIO, SPI/I2C, NVS, C++ idioms
+
+Skills are lazy-loaded on-demand — zero token cost until an agent needs them.
+
+### LSP Integration
+
+OpenCode is configured with `esp-clangd` (ESP-IDF's LLVM-based clangd) for C/C++:
+
+| Component | Purpose |
+|-----------|---------|
+| `build/compile_commands.json` | LSP index — refresh with `idf.py reconfigure` |
+| `.clangd` | Filters GCC-only flags that clangd rejects |
+| `esp-clangd` | Cross-compiler-aware LSP server (Xtensa + RISC-V) |
+
+### Signal Trust Order
+
+1. `idf.py build` output → ground truth for compilation and linking
+2. `idf.py monitor` output → ground truth for runtime behavior
+3. LSP diagnostics → fast edit-time signal (may have false positives if index is stale)
+
+### ESP-IDF Quick Start
+
+```bash
+# In your ESP-IDF project directory:
+. $IDF_PATH/export.sh
+bash path/to/opencode-shared/scripts/init-esp32.sh
+opencode
+```
+
+### Custom Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/esp-build` | Build firmware + error report |
+| `/esp-check` | Refresh LSP index + diagnostics |
+| `/esp-flash <port>` | Flash + monitor connected device |
+| `/esp-size` | Binary size breakdown by component |
+| `/esp-new-component <name>` | Scaffold a new ESP-IDF component |
+
+### Safety Rules
+
+- Never mark a task done without a clean `idf.py build`
+- Never edit files in `build/` or `managed_components/`
+- `idf.py flash` and `idf.py erase_flash` require user confirmation
+
+---
+
 ## context-mode — MANDATORY routing rules
 
 One unrouted command dumps 56 KB into context. All I/O goes through context-mode tools.

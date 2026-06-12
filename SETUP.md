@@ -5,6 +5,7 @@
 | Software | Version | How to get |
 |----------|---------|------------|
 | oMLX | latest | macOS menu bar app — serves models on port 8005 |
+| ESP-IDF | v5.3+ | `git clone --recursive https://github.com/espressif/esp-idf.git ~/esp/esp-idf` |
 | Node.js | 20+ | `brew install node` |
 | bun | latest | `curl -fsSL https://bun.sh/install \| bash` |
 | OpenCode | latest | `npm install -g opencode-ai` |
@@ -45,11 +46,43 @@ chmod +x scripts/check-services.sh
 ./start.sh
 ```
 
+## ESP-IDF / ESP32 Setup
+
+For ESP32 development with LSP support:
+
+```bash
+# 1. Install ESP-IDF prerequisites
+python3 -m pip install --user -r ~/esp/esp-idf/requirements.txt
+~/esp/esp-idf/install.sh  # installs toolchains (esp-clang, Xtensa/RISC-V gcc)
+
+# 2. Navigate to your ESP-IDF project and initialize
+cd my-esp32-project
+. $IDF_PATH/export.sh
+bash path/to/local-ai/scripts/init-esp32.sh
+
+# 3. Start opencode
+opencode
+```
+
+The init script will:
+1. Detect `esp-clangd` binary and cross-compiler paths
+2. Generate `.opencode/esp-shell.sh` (IDF-aware shell wrapper)
+3. Generate `.clangd` project config (filters GCC-only flags)
+4. Merge LSP config into `opencode.json`
+5. Run `idf.py reconfigure` to create `compile_commands.json`
+6. Symlink ESP32 skills into `.opencode/skills/`
+
+### Verify ESP32 setup
+
+```bash
+bash path/to/local-ai/scripts/check-esp32.sh
+```
+
 ## Expected service check output
 
 ```
 ✓ oMLX              localhost:8005  (gemma-4-e4b-it-4bit)
-✓ qmd               status ok       (4 collections)
+✓ qmd               status ok       (5 collections: tasks, patterns, plans, research, builds)
 ✓ context-mode      binary found
 ✓ bun               binary found
 ✓ opencode          binary found
@@ -72,12 +105,19 @@ chmod +x scripts/check-services.sh
 | `AGENTS.md` | Agent pipeline rules, context-mode routing, tool reference |
 | `.opencode/agent/scout.md` | Scout agent definition (research) |
 | `.opencode/agent/plan.md` | Plan agent definition (cloud, 3-round cap) |
+| `.opencode/agent/builder.md` | Builder agent definition (orchestration) |
 | `.opencode/agent/dev.md` | Dev agent definition (implementation, ReAct loop) |
+| `.opencode/agent/coder.md` | Coder subagent definition (focused implementation) |
 | `.opencode/agent/qa.md` | QA subagent definition (validation) |
 | `.opencode/agent/mem.md` | Mem subagent definition (memory commit) |
+| `.opencode/skills/esp32-idf/` | ESP-IDF toolchain skill |
+| `.opencode/skills/esp32-patterns/` | ESP32 patterns skill |
 | `.env.example` | Environment variable template |
 | `scripts/qmd-setup.sh` | Create qmd project-local index and collections |
 | `scripts/check-services.sh` | Verify all services are healthy |
+| `scripts/init-esp32.sh` | Initialize ESP-IDF project with LSP support |
+| `scripts/check-esp32.sh` | Verify ESP-IDF + LSP environment |
+| `templates/AGENTS-esp32.md` | AGENTS.md template for ESP32 projects |
 | `start.sh` | Start opencode with EXA enabled |
 
 ---
@@ -91,6 +131,7 @@ chmod +x scripts/check-services.sh
 - **oMLX context scaling**: Must be enabled in admin dashboard (http://127.0.0.1:8005/admin) — Claude Code Optimization
 - **context-mode**: Plugin + MCP tool routing — all I/O goes through sandbox
 - **qmd**: Bun-based MCP server (`bunx @tobilu/qmd mcp`) for persistent semantic memory
+- **ESP32 support**: Two domain skills (`esp32-idf`, `esp32-patterns`) for ESP-IDF development with LSP via `esp-clangd`
 
 ---
 
