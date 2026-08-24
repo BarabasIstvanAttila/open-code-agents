@@ -83,6 +83,18 @@ One unrouted command dumps 56 KB into context. All I/O goes through context-mode
 - **File reading (for editing)** → Read tool (need exact bytes for Edit)
 - **grep / search (large results)** → `ctx_execute("shell", "rg ...")` in sandbox
 
+### Loop-safety — shell quoting & tool-error recovery
+
+**Why this exists:** On 2026-07-07 a `ctx_execute("shell", code)` multi-line verification script had an unmatched `"` inside a heredoc. The cloud model then emitted six malformed tool calls in one turn — empty tool name, truncated paths, a `cd /a/bash && bash <<< $'true'` no-op "probe" against a nonexistent path — before opencode's `doom_loop` + `external_directory` guards aborted the turn and compaction pruned it. No damage, but the verification step was skipped.
+
+| Risk | Rule |
+|------|------|
+| **Multi-line shell & nested quotes** | If a `ctx_execute("shell", code)` script is **>5 lines OR contains any `"` inside already-quoted strings**, write it as a temp `.sh` file in the workspace (via the `write` tool — file lives on host, sandbox can read it) and execute with `ctx_execute("shell", "bash /Users/atti/Projects/HomeLab/.agent/tmp/verify-NNN.sh")`. Removes the nested-quoting class of bugs. Single-purpose, ≤5-line scripts can stay inline. |
+| **On tool error → STOP, don't mutate** | If a tool returns `invalid arguments`, `unmatched "`, or `Exit code 1`, fix the **original** call by re-reading its schema. Do NOT retry with: a different tool name, an empty tool name, a truncated/invented path, or a no-op probe. One schema-driven retry, then surface to the user. |
+| **Retry cap** | Max **2 retries** for the SAME tool after a hard error. On the 3rd failure → tell the user and stop. No doom loops. |
+| **Path hygiene** | Every path passed to a tool must be a known-existing absolute path (or a deliberate new file under the workspace). Never invent a path like `/a/bash` to "test" state — opencode's `external_directory` guard flags it and aborts the turn. |
+| **No sanity probes** | Never send `bash <<< $'true'`, `cd <invented-path>`, `[a/a]`, or similar probes to recover from an error. If model state is uncertain, ask the user — don't try to "wake" the shell. |
+
 ### Think in Code — MANDATORY
 
 Analyze/count/filter/compare/search/parse/transform data: **write code** via `ctx_execute(language, code)`. Only `console.log()` output enters context. One script replaces ten tool calls.
