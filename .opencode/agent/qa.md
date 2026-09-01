@@ -1,7 +1,7 @@
 ---
 name: qa
 description: QA validation subagent. Runs tests, lint, typecheck, and checks plan compliance. Prints PASS/FAIL/CONDITIONAL verdict.
-model: omlx/Qwen3.5-9B-OptiQ-4bit
+model: opencode-go/deepseek-v4-flash
 mode: subagent
 temperature: 0.1
 permission:

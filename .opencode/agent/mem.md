@@ -1,9 +1,9 @@
 ---
 name: mem
 description: Memory agent. Commits task summaries, code patterns, and archived plans to qmd persistent memory after a successful QA pass. Runs /mode mem after QA completes.
-model: omlx/Qwen3.5-9B-OptiQ-4bit
+model: opencode-go/deepseek-v4-flash
 mode: subagent
-temperature: 0.2
+temperature: 0.1
 permission:
   bash:
     qmd *: allow

@@ -1,7 +1,7 @@
 ---
 name: plan
 description: Planning agent. Produces a precise, file-specific implementation plan by analyzing research. Maximum 3 reasoning rounds. Use /mode plan after Scout completes.
-model: opencode-go/glm-5.1
+model: opencode-go/kimi-k3
 mode: primary
 temperature: 0.15
 permission:

@@ -1,6 +1,6 @@
 # open-code-agents
 
-Local-first AI agent infrastructure for OpenCode. Provides a complete 5-agent pipeline (scout → plan → dev → qa → mem) powered by local models via oMLX, with persistent semantic memory through qmd.
+Local-first AI agent infrastructure for OpenCode. Provides a complete agent pipeline (scout → plan → dev → deploy → qa → mem) powered by free cloud models via opencode-go, with persistent semantic memory through qmd.
 
 **Use case**: Add this as a Git submodule to any project to get full AI-powered development support running locally through OpenCode.
 
@@ -34,22 +34,25 @@ Local-first AI agent infrastructure for OpenCode. Provides a complete 5-agent pi
 ### Agent Pipeline
 
 ```
-/mode scout → /mode plan → /mode dev → /mode qa → /mode mem
+/mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
 ```
+
+Container-development goals take the autonomous loop instead: `/mode orchestrator` (plan → implement → deploy one-by-one on local Docker → curl+browser verify → findings → re-plan, until the goal's Definition of Done is green; max 5 iterations).
 
 | Agent | Mode | Model | Role |
 |-------|------|-------|------|
-| **scout** | primary | omlx/Qwen3.5-9B (local) | Research — gather context, map codebase, fetch docs |
-| **plan** | primary | opencode-go/glm-5.1 (cloud) | Plan — 3-round cap, produce file-specific plan |
-| **dev** | primary | opencode-go/glm-5.1 (cloud) | Implement — ReAct loop, follow plan step by step |
-| **qa** | subagent | omlx/Qwen3.5-9B (local) | Validate — tests, lint, typecheck, plan compliance |
-| **mem** | subagent | omlx/Qwen3.5-9B (local) | Memory — commit task summaries, patterns, rebuild index |
+| **scout** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Research — gather context, map codebase, fetch docs |
+| **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan |
+| **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Implement — ReAct loop, follow plan step by step |
+| **deploy** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Deploy — compose stacks over SSH, deterministic smoke tests |
+| **orchestrator** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Container loop — goal→plan→implement→verify locally (one container at a time, curl + Playwright browser), findings-driven iterations |
+| **qa** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Validate — tests, lint, typecheck, plan compliance |
+| **mem** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Memory — commit task summaries, patterns, rebuild index |
 
 ### Model routing
 
-- **Local (oMLX)**: Runs on your Mac via oMLX on port 8005. Handles scout, qa, and mem agents. Zero data leaves your machine.
-  - `Qwen3.5-9B` — local model (32K context, 4K output)
-- **Cloud (OpenCode)**: Used for plan and dev agents. Cost-controlled with a 3-round cap for plan.
+- **Cloud (opencode-go)**: Default for all pipeline agents — free-tier models (`deepseek-v4-flash` for scout/dev/deploy/qa/mem, `kimi-k3` for plan). Cost-controlled with a 3-round cap for plan.
+- **Local (oMLX)**: Retained for manual local-only runs via the `omlx/` provider on port 8005 (`Qwen3.5-9B-OptiQ-4bit`, 32K context). No longer a pipeline default.
 
 ---
 
@@ -177,6 +180,8 @@ Then use the agent pipeline:
 /mode scout    →  Research the task
 /mode plan     →  Create implementation plan
 /mode dev      →  Implement the plan
+/mode deploy   →  Deploy compose stacks over SSH + smoke tests
+/mode orchestrator →  Autonomous container loop: plan→implement→verify (local Docker, one container at a time, curl + browser) until done
 /mode qa       →  Validate the implementation
 /mode mem      →  Commit to persistent memory
 ```
