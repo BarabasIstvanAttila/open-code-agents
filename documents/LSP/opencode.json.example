@@ -1,0 +1,128 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "shell": ".opencode/esp-shell.sh",
+
+  "lsp": {
+    "clangd": {
+      "command": [
+        "/Users/atti/.espressif/tools/esp-clang/esp-18.1.2_20240912/esp-clang/bin/clangd",
+        "--background-index",
+        "--clang-tidy",
+        "--completion-style=detailed",
+        "--header-insertion=never",
+        "--query-driver=/Users/atti/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp-elf-*-gcc",
+        "--compile-commands-dir=build"
+      ],
+      "env": {
+        "IDF_PATH": "/Users/atti/esp/esp-idf"
+      },
+      "extensions": [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh"]
+    }
+  },
+
+  "watcher": {
+    "ignore": [
+      "build/**",
+      "managed_components/**",
+      "sdkconfig.old",
+      "dependencies.lock"
+    ]
+  },
+
+  "permission": {
+    "skill": { "*": "allow" },
+    "lsp": "allow",
+    "bash": {
+      "*": "allow",
+      "idf.py flash*": "ask",
+      "idf.py erase*": "ask",
+      "idf.py fullclean": "ask"
+    }
+  },
+
+  "agent": {
+    "dev": {
+      "permission": {
+        "skill": { "*": "allow" },
+        "lsp": "allow",
+        "edit": "allow",
+        "bash": {
+          "*": "allow",
+          "idf.py flash*": "ask",
+          "idf.py erase*": "ask",
+          "idf.py fullclean": "ask"
+        }
+      }
+    },
+    "qa": {
+      "permission": {
+        "skill": { "*": "allow" },
+        "lsp": "allow",
+        "edit": "deny",
+        "bash": {
+          "*": "allow",
+          "idf.py flash*": "ask",
+          "idf.py erase*": "ask"
+        }
+      }
+    },
+    "scout": {
+      "permission": {
+        "skill": { "*": "allow" },
+        "lsp": "allow",
+        "edit": "deny",
+        "bash": "deny"
+      }
+    },
+    "plan": {
+      "permission": {
+        "skill": { "*": "allow" },
+        "lsp": "allow",
+        "edit": "deny",
+        "bash": "deny"
+      }
+    },
+    "mem": {
+      "permission": {
+        "skill": { "*": "allow" },
+        "lsp": "allow",
+        "edit": "allow",
+        "bash": { "*": "allow" }
+      }
+    }
+  },
+
+  "command": {
+    "esp-build": {
+      "description": "Build firmware — reports errors with file:line context",
+      "template": "Load the esp32-idf skill.\nRun: idf.py build 2>&1 | tee build.log\nParse build.log: show each error with file/line/message, group warnings by severity, report binary size from the last output lines.",
+      "agent": "dev"
+    },
+    "esp-check": {
+      "description": "Refresh LSP index (reconfigure) then report real errors",
+      "template": "Load the esp32-idf skill.\nRun: idf.py reconfigure  (refreshes compile_commands.json)\nThen check LSP diagnostics across all .c and .h files. Ignore errors inside build/ and esp-idf/components/. Report only errors in project source files.",
+      "agent": "dev"
+    },
+    "esp-flash": {
+      "description": "Flash + monitor — usage: /esp-flash /dev/cu.usbserial-XXXX",
+      "template": "Load the esp32-idf skill.\nFlash and monitor: idf.py -p $ARGUMENTS flash monitor\nDecode any crash backtraces from monitor output.",
+      "agent": "dev"
+    },
+    "esp-size": {
+      "description": "Show firmware binary size breakdown by component",
+      "template": "Load the esp32-idf skill.\nRun: idf.py size-components\nShow top 10 largest components, flag anything unexpectedly large.",
+      "agent": "qa"
+    },
+    "esp-debug": {
+      "description": "Start OpenOCD/GDB session — usage: /esp-debug [board.cfg]",
+      "template": "Load the esp32-idf skill.\nStart OpenOCD: openocd -f $ARGUMENTS (default: board/esp32-wrover-kit.cfg)\nProvide the GDB connect command and useful initial breakpoints.",
+      "agent": "dev"
+    },
+    "esp-new-component": {
+      "description": "Scaffold a new component — usage: /esp-new-component my_name",
+      "template": "Load the esp32-patterns skill.\nCreate a new ESP-IDF component named $ARGUMENTS with correct CMakeLists.txt, public include/ header, and .c implementation skeleton.",
+      "agent": "dev"
+    }
+  }
+}

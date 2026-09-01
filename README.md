@@ -1,6 +1,7 @@
 # open-code-agents
 
 Local-first AI agent infrastructure for OpenCode. Provides a complete agent pipeline (scout → plan → dev → deploy → qa → mem) powered by free cloud models via opencode-go, with persistent semantic memory through qmd.
+Local-first AI agent infrastructure for OpenCode. Provides a complete 7-agent pipeline (scout → plan → builder → coder subagents → qa → mem) powered by local models via oMLX, with persistent semantic memory through qmd.
 
 **Use case**: Add this as a Git submodule to any project to get full AI-powered development support running locally through OpenCode.
 
@@ -14,7 +15,7 @@ Local-first AI agent infrastructure for OpenCode. Provides a complete agent pipe
    ├── local-ai/                  ← This submodule
    │   ├── opencode.json          ← Agent configuration (providers, MCP servers, tools)
    │   ├── AGENTS.md              ← Agent routing rules and pipeline docs
-   │   ├── .opencode/agent/       ← Agent definitions (scout, plan, dev, qa, mem)
+   │   ├── .opencode/agent/       ← Agent definitions (scout, plan, builder, dev, coder, qa, mem)
    │   ├── .opencode/skills/      ← OpenCode skills
    │   └── scripts/               ← Setup and maintenance scripts
    │
@@ -28,12 +29,20 @@ Local-first AI agent infrastructure for OpenCode. Provides a complete agent pipe
        ├── tasks/
        ├── patterns/
        ├── plans/
-       └── research/
+       ├── research/
+       └── builds/
 ```
 
 ### Agent Pipeline
 
+**Automated flow (recommended — 3 user commands):**
 ```
+/mode scout → /mode plan → [auto: mem] → /mode builder → [auto: coders → qa → mem]
+```
+
+**Standalone dev flow (for simple tasks — 5 user commands):**
+```
+/mode scout → /mode plan → [auto: mem] → /mode dev → /mode qa → /mode mem
 /mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
 ```
 
@@ -41,6 +50,13 @@ Container-development goals take the autonomous loop instead: `/mode orchestrato
 
 | Agent | Mode | Model | Role |
 |-------|------|-------|------|
+| **scout** | primary | opencode-go/glm-5.1 (cloud) | Research — gather context, map codebase, fetch docs |
+| **plan** | primary | opencode-go/qwen3.7-plus (cloud) | Plan — 3-round cap, produce plan, auto-spawn mem |
+| **builder** | primary | opencode-go/deepseek-v4-flash (cloud) | Orchestrate — decompose plan, spawn coders, auto-spawn qa + mem |
+| **dev** | primary | omlx/gemma-4-e4b-it-4bit (local) | Standalone implementation — for simple tasks that skip the builder |
+| **coder** | subagent | omlx/gemma-4-e4b-it-4bit (local) | Focused implementation — spawned by builder, no MCPs, context-isolated |
+| **qa** | subagent | omlx/gemma-4-e4b-it-4bit (local) | Validate — tests, lint, typecheck (auto-spawned by builder) |
+| **mem** | subagent | omlx/gemma-4-e4b-it-4bit (local) | Memory — commit artifacts (auto-spawned by plan and builder) |
 | **scout** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Research — gather context, map codebase, fetch docs |
 | **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan |
 | **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Implement — ReAct loop, follow plan step by step |
@@ -53,6 +69,11 @@ Container-development goals take the autonomous loop instead: `/mode orchestrato
 
 - **Cloud (opencode-go)**: Default for all pipeline agents — free-tier models (`deepseek-v4-flash` for scout/dev/deploy/qa/mem, `kimi-k3` for plan). Cost-controlled with a 3-round cap for plan.
 - **Local (oMLX)**: Retained for manual local-only runs via the `omlx/` provider on port 8005 (`Qwen3.5-9B-OptiQ-4bit`, 32K context). No longer a pipeline default.
+- **Local (oMLX)**: Runs on your Mac via oMLX on port 8005. Handles scout, dev, coder, qa, and mem agents. Zero data leaves your machine.
+  - `gemma-4-e4b-it-4bit` — local model (32K context, 8K output)
+- **Cloud (OpenCode)**: Used for plan and builder agents.
+  - `qwen3.7-plus` — plan agent (200K context)
+  - `deepseek-v4-flash` — builder agent (32K context, cost-controlled)
 
 ---
 
@@ -111,7 +132,7 @@ The init script will:
    - `.opencode/skills/` → `local-ai/.opencode/skills/`
    - `.opencode/package.json` → `local-ai/.opencode/package.json`
 3. **Handle opencode.json** — If your project doesn't have one, it symlinks the submodule's config. If it does, it prints merge instructions.
-4. **Create working directories** — `.agent/`, `memory/` (with tasks, patterns, plans, research subdirs)
+4. **Create working directories** — `.agent/`, `memory/` (with tasks, patterns, plans, research, builds subdirs)
 5. **Initialize qmd** — Set up project-local index and collections
 6. **Update .gitignore** — Add entries for `.agent/`, `.qmd/`, `*.secrets/`, `.env`, `memory/`
 
@@ -176,8 +197,18 @@ OPENCODE_ENABLE_EXA=1 opencode
 
 Then use the agent pipeline:
 
+**Automated flow (recommended — 3 commands):**
 ```
 /mode scout    →  Research the task
+/mode plan     →  Create plan + auto-save to memory
+/mode builder  →  Orchestrate coders + auto-run QA + auto-save to memory
+```
+
+**Standalone dev flow (for simple tasks — 5 commands):**
+```
+/mode scout    →  Research the task
+/mode plan     →  Create plan + auto-save to memory
+/mode dev      →  Implement the plan (standalone, full context)
 /mode plan     →  Create implementation plan
 /mode dev      →  Implement the plan
 /mode deploy   →  Deploy compose stacks over SSH + smoke tests
@@ -259,9 +290,9 @@ If your project already has its own `opencode.json`, the init script will not ov
         "apiKey": "{env:OMLX_API_KEY}"
       },
       "models": {
-        "Qwen3.5-9B-OptiQ-4bit": {
-          "name": "Qwen3.5-9B-OptiQ-4bit",
-          "limit": { "context": 32768, "output": 4096 }
+        "gemma-4-e4b-it-4bit": {
+          "name": "gemma-4-e4b-it-4bit",
+          "limit": { "context": 32768, "output": 8192 }
         }
       }
     }
@@ -328,7 +359,9 @@ These directories are created by init and should be in `.gitignore`:
 .agent/                  ← Agent working files (gitignored)
 ├── research-report.md   ← scout output
 ├── plan.md              ← plan agent output
-├── dev-report.md        ← dev agent output
+├── builder-progress.md  ← builder runtime progress tracking
+├── builder-report.md    ← builder final report
+├── dev-report.md        ← dev agent output (standalone mode)
 ├── qa-report.md         ← qa agent output
 └── memory-log.md        ← mem agent output
 
@@ -342,7 +375,13 @@ memory/                  ← Persistent AI memory
 ├── tasks/               ← Task summaries
 ├── patterns/            ← Code patterns
 ├── plans/               ← Archived plans
-└── research/            ← Archived research
+├── research/            ← Archived research
+└── builds/              ← Per-task build records (created by builder)
+    └── <date>-<slug>/
+        ├── plan.md      ← Copy of plan used
+        ├── research.md  ← Copy of research used
+        ├── steps/       ← Per-step implementation records
+        └── summary.md   ← Build results summary
 ```
 
 ---
@@ -374,18 +413,25 @@ open-code-agents/
 │   ├── agent/
 │   │   ├── scout.md             ← Research agent definition
 │   │   ├── plan.md              ← Planning agent definition
-│   │   ├── dev.md               ← Implementation agent definition
+│   │   ├── builder.md           ← Orchestration agent definition
+│   │   ├── dev.md               ← Standalone implementation agent definition
+│   │   ├── coder.md             ← Focused subagent definition (spawned by builder)
 │   │   ├── qa.md                ← QA validation agent definition
 │   │   └── mem.md               ← Memory agent definition
 │   ├── skills/
-│   │   └── skill-builder/       ← Skill creation skill
+│   │   ├── skill-builder/       ← Skill creation skill
+│   │   ├── esp32-idf/           ← ESP-IDF toolchain skill
+│   │   └── esp32-patterns/      ← ESP32 patterns skill
 │   ├── .gitignore               ← Ignore node_modules in .opencode
 │   └── package.json             ← Plugin dependencies (context-mode)
 ├── scripts/
 │   ├── init-submodule.sh        ← Initialize as submodule in a parent project
+│   ├── init-esp32.sh            ← Initialize ESP-IDF project with LSP support
 │   ├── update-submodule.sh      ← Update submodule to latest version
 │   ├── check-services.sh        ← Verify all services are running
-│   └── qmd-setup.sh             ← Initialize qmd collections and index
+│   ├── check-esp32.sh           ← Verify ESP-IDF + LSP environment
+│   ├── qmd-setup.sh             ← Initialize qmd collections and index
+│   └── start.sh                 ← Start opencode with EXA enabled
 ├── .secrets/                    ← Secret files (gitignored)
 ├── memory/                      ← Persistent AI memory collections
 └── .agent/                      ← Agent working files (gitignored)
@@ -409,6 +455,48 @@ When you add this project as a submodule and run `init-submodule.sh`:
 
 ---
 
+## ESP32/ESP-IDF Development
+
+This agent system supports ESP32 development with full LSP integration through `esp-clangd`.
+
+### Quick Start
+
+```bash
+# In your ESP-IDF project directory:
+. $IDF_PATH/export.sh
+bash path/to/local-ai/scripts/init-esp32.sh
+opencode
+```
+
+### Features
+
+- **LSP via esp-clangd** — cross-compiler-aware (Xtensa + RISC-V), provides diagnostics without full build
+- **Two domain skills**: `esp32-idf` (toolchain) and `esp32-patterns` (FreeRTOS, drivers, NVS, C++ idioms)
+- **Auto-generated `compile_commands.json`** — refresh with `idf.py reconfigure`
+- **IDF-aware shell wrapper** — every agent bash command has ESP-IDF environment pre-sourced
+- **Custom slash commands** — `/esp-build`, `/esp-check`, `/esp-flash`, `/esp-size`, `/esp-new-component`
+
+### Available Skills
+
+| Skill | Description | When to load |
+|-------|-------------|--------------|
+| `esp32-idf` | Toolchain ops: idf.py, LSP triage, build/flash/debug | Running build commands, interpreting errors |
+| `esp32-patterns` | Domain patterns: FreeRTOS, GPIO, SPI/I2C, NVS, C++ | Designing components, writing drivers |
+
+### Signal Trust Order
+
+1. `idf.py build` output → ground truth
+2. `idf.py monitor` output → runtime truth
+3. LSP diagnostics → fast edit-time signal (may be stale)
+
+### Safety Rules
+
+- Never mark a task done without a clean `idf.py build`
+- Never edit files in `build/` or `managed_components/`
+- `idf.py flash` and `idf.py erase_flash` require user confirmation
+
+---
+
 ## Troubleshooting
 
 ### oMLX not responding
@@ -421,7 +509,7 @@ open -a oMLX
 
 ### oMLX works in browser but lags in OpenCode
 
-This is almost always caused by the **context window limit** being set too high for a local model. The project config uses `32768` for context and `4096` for output — these are tuned for the Qwen3.5-9B model running locally on Mac hardware.
+This is almost always caused by the **context window limit** being set too high for a local model. The project config uses `32768` for context and `8192` for output — these are tuned for the gemma-4-e4b-it-4bit model running locally on Mac hardware.
 
 If you experience long delays before the first token appears:
 
@@ -432,10 +520,10 @@ If you experience long delays before the first token appears:
 2. Do NOT set context to 262144 (256K) — the local model cannot process that much context efficiently and will hang for minutes before responding.
 3. Verify the model is responding at all:
    ```bash
-   curl -s -H "Authorization: Bearer $OMLX_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"model":"Qwen3.5-9B-OptiQ-4bit","messages":[{"role":"user","content":"hello"}],"max_tokens":50}' \
-     http://127.0.0.1:8005/v1/chat/completions
+    curl -s -H "Authorization: Bearer $OMLX_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"model":"gemma-4-e4b-it-4bit","messages":[{"role":"user","content":"hello"}],"max_tokens":50}' \
+      http://127.0.0.1:8005/v1/chat/completions
    ```
 4. If the curl test works but OpenCode still lags, the issue is context size — OpenCode sends the full system prompt (AGENTS.md + agent definitions + conversation history) which can be very large.
 5. **Enable oMLX context scaling** in the admin dashboard (http://127.0.0.1:8005/admin) — this makes oMLX report a larger context to OpenCode so compaction triggers earlier.
