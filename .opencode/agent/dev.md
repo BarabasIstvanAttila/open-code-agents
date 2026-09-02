@@ -1,7 +1,6 @@
 ---
 name: dev
 description: Implementation agent. Follows the plan from .agent/plan.md and implements each step using a strict ReAct loop. Use /mode dev after Plan completes.
-model: omlx/gemma-4-e4b-it-4bit
 model: opencode-go/deepseek-v4-flash
 mode: primary
 temperature: 0.05

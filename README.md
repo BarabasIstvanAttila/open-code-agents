@@ -1,7 +1,6 @@
 # open-code-agents
 
-Local-first AI agent infrastructure for OpenCode. Provides a complete agent pipeline (scout → plan → dev → deploy → qa → mem) powered by free cloud models via opencode-go, with persistent semantic memory through qmd.
-Local-first AI agent infrastructure for OpenCode. Provides a complete 7-agent pipeline (scout → plan → builder → coder subagents → qa → mem) powered by local models via oMLX, with persistent semantic memory through qmd.
+Local-first AI agent infrastructure for OpenCode. Provides a complete agent pipeline with three flows — manual (scout → plan → dev → deploy → qa → mem), semi-automatic (builder orchestrating coder subagents), and a goal-driven orchestrator loop for container development — powered by free cloud models via opencode-go, with persistent semantic memory through qmd.
 
 **Use case**: Add this as a Git submodule to any project to get full AI-powered development support running locally through OpenCode.
 
@@ -35,45 +34,39 @@ Local-first AI agent infrastructure for OpenCode. Provides a complete 7-agent pi
 
 ### Agent Pipeline
 
-**Automated flow (recommended — 3 user commands):**
+Three flows — pick by task shape:
+
+**1. Manual flow (every step user-invoked — full control):**
+```
+/mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
+```
+
+**2. Semi-automatic development flow (builder orchestrates implementation — recommended for multi-file tasks):**
 ```
 /mode scout → /mode plan → [auto: mem] → /mode builder → [auto: coders → qa → mem]
 ```
 
-**Standalone dev flow (for simple tasks — 5 user commands):**
+**3. Goal-driven orchestrator flow (autonomous container loop — container/devops goals):**
 ```
-/mode scout → /mode plan → [auto: mem] → /mode dev → /mode qa → /mode mem
-/mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
+/mode orchestrator    (plan → implement → deploy one-by-one on local Docker → curl+browser verify → findings → re-plan, until DoD green; max 5 iterations)
 ```
-
-Container-development goals take the autonomous loop instead: `/mode orchestrator` (plan → implement → deploy one-by-one on local Docker → curl+browser verify → findings → re-plan, until the goal's Definition of Done is green; max 5 iterations).
 
 | Agent | Mode | Model | Role |
 |-------|------|-------|------|
-| **scout** | primary | opencode-go/glm-5.1 (cloud) | Research — gather context, map codebase, fetch docs |
-| **plan** | primary | opencode-go/qwen3.7-plus (cloud) | Plan — 3-round cap, produce plan, auto-spawn mem |
-| **builder** | primary | opencode-go/deepseek-v4-flash (cloud) | Orchestrate — decompose plan, spawn coders, auto-spawn qa + mem |
-| **dev** | primary | omlx/gemma-4-e4b-it-4bit (local) | Standalone implementation — for simple tasks that skip the builder |
-| **coder** | subagent | omlx/gemma-4-e4b-it-4bit (local) | Focused implementation — spawned by builder, no MCPs, context-isolated |
-| **qa** | subagent | omlx/gemma-4-e4b-it-4bit (local) | Validate — tests, lint, typecheck (auto-spawned by builder) |
-| **mem** | subagent | omlx/gemma-4-e4b-it-4bit (local) | Memory — commit artifacts (auto-spawned by plan and builder) |
 | **scout** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Research — gather context, map codebase, fetch docs |
-| **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan |
-| **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Implement — ReAct loop, follow plan step by step |
+| **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan, auto-spawn mem |
+| **builder** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Orchestrate — decompose plan, spawn coders, auto-spawn qa + mem |
+| **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Standalone implementation — simple tasks that skip the builder |
 | **deploy** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Deploy — compose stacks over SSH, deterministic smoke tests |
 | **orchestrator** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Container loop — goal→plan→implement→verify locally (one container at a time, curl + Playwright browser), findings-driven iterations |
+| **coder** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Focused implementation — spawned by builder, no MCPs, context-isolated |
 | **qa** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Validate — tests, lint, typecheck, plan compliance |
-| **mem** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Memory — commit task summaries, patterns, rebuild index |
+| **mem** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Memory — commit artifacts (auto-spawned by plan and builder) |
 
 ### Model routing
 
-- **Cloud (opencode-go)**: Default for all pipeline agents — free-tier models (`deepseek-v4-flash` for scout/dev/deploy/qa/mem, `kimi-k3` for plan). Cost-controlled with a 3-round cap for plan.
-- **Local (oMLX)**: Retained for manual local-only runs via the `omlx/` provider on port 8005 (`Qwen3.5-9B-OptiQ-4bit`, 32K context). No longer a pipeline default.
-- **Local (oMLX)**: Runs on your Mac via oMLX on port 8005. Handles scout, dev, coder, qa, and mem agents. Zero data leaves your machine.
-  - `gemma-4-e4b-it-4bit` — local model (32K context, 8K output)
-- **Cloud (OpenCode)**: Used for plan and builder agents.
-  - `qwen3.7-plus` — plan agent (200K context)
-  - `deepseek-v4-flash` — builder agent (32K context, cost-controlled)
+- **Cloud (opencode-go)**: Default for all pipeline agents — free-tier models (`deepseek-v4-flash` for scout/dev/deploy/builder/orchestrator/coder/qa/mem, `kimi-k3` for plan). Cost-controlled with a 3-round cap for plan.
+- **Local (oMLX)**: Retained for manual local-only runs via the `omlx/` provider on port 8005 (`Qwen3.5-9B-OptiQ-4bit`, 32K context). Not a pipeline default.
 
 ---
 

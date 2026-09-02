@@ -1,25 +1,25 @@
 # OpenCode Agent Pipeline — Configuration & Rules
 
 **oMLX · qmd · context-mode · OpenCode**  
-*Five primary agents, two subagents. Free cloud models via opencode-go (deepseek-v4-flash + kimi-k3); oMLX retained for manual use.*
-*Four primary agents, three subagents. All local-first. No proxy layer.*
+*Six primary agents, three subagents. Cloud models via opencode-go (deepseek-v4-flash + kimi-k3). oMLX retained for manual local-only runs.*
 
 ---
 
 ## Agent Pipeline
 
-**Automated flow (recommended — 3 user commands):**
+Three flows — pick by task shape:
+
+**1. Manual flow (every step user-invoked — full control):**
+```
+/mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
+```
+
+**2. Semi-automatic development flow (builder orchestrates implementation — recommended for multi-file tasks):**
 ```
 /mode scout → /mode plan → [auto: mem] → /mode builder → [auto: coders → qa → mem]
 ```
 
-**Standalone dev flow (for simple tasks — 5 user commands):**
-```
-/mode scout → /mode plan → [auto: mem] → /mode dev → /mode deploy → /mode qa → /mode mem
-```
-
-Container-development goals take the autonomous loop instead:
-
+**3. Goal-driven orchestrator flow (autonomous container loop — container/devops goals):**
 ```
 /mode orchestrator    (plan → implement → deploy one-by-one → curl+browser verify → findings → re-plan, until DoD green)
 ```
@@ -27,19 +27,14 @@ Container-development goals take the autonomous loop instead:
 | Agent | Mode | Model | Role |
 |-------|------|-------|------|
 | **scout** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Research — gather context, map codebase, fetch docs |
-| **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan |
-| **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Implement — ReAct loop, follow plan step by step |
+| **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan, auto-spawn mem |
+| **builder** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Orchestrate — decompose plan, spawn coders, auto-spawn qa + mem |
+| **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Standalone implementation — simple tasks that skip the builder |
 | **deploy** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Deploy — compose stacks over SSH, deterministic smoke, deploy verdict (uses `homelab-deploy` skill) |
 | **orchestrator** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Container loop — goal→plan→implement→verify locally (one container at a time, curl + Playwright browser), findings-driven iterations (uses `docker-loop` skill) |
-| **qa** - @qa| subagent | opencode-go/deepseek-v4-flash (cloud-free) | Validate — tests, lint, typecheck, plan compliance |
-| **mem** - @mem| subagent | opencode-go/deepseek-v4-flash (cloud-free) | Memory — commit task summaries, patterns, rebuild qmd index |
-| **scout** | primary | opencode-go/glm-5.1 (cloud) | Research — gather context, map codebase, fetch docs |
-| **plan** | primary | opencode-go/qwen3.7-plus (cloud) | Plan — 3-round cap, produce plan, auto-spawn mem |
-| **builder** | primary | opencode-go/deepseek-v4-flash (cloud) | Orchestrate — decompose plan, spawn coders, auto-spawn qa + mem |
-| **dev** | primary | omlx/gemma-4-e4b-it-4bit (local) | Standalone implementation — for simple tasks that skip the builder |
-| **coder** | subagent | omlx/gemma-4-e4b-it-4bit (local) | Focused implementation — spawned by builder, no MCPs, context-isolated |
-| **qa** | subagent | omlx/gemma-4-e4b-it-4bit (local) | Validate — tests, lint, typecheck (auto-spawned by builder) |
-| **mem** | subagent | omlx/gemma-4-e4b-it-4bit (local) | Memory — commit artifacts (auto-spawned by plan and builder) |
+| **coder** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Focused implementation — spawned by builder, no MCPs, context-isolated |
+| **qa** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Validate — tests, lint, typecheck, plan compliance (auto-spawned by builder) |
+| **mem** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Memory — commit artifacts (auto-spawned by plan and builder) |
 
 ### Working files (per project, git-ignored)
 
@@ -50,10 +45,10 @@ Container-development goals take the autonomous loop instead:
 ├── builder-progress.md     ← builder runtime progress tracking
 ├── builder-report.md       ← builder final report
 ├── dev-report.md           ← dev agent output (standalone mode)
-├── deploy-report.md     ← deploy agent output
+├── deploy-report.md        ← deploy agent output
 ├── qa-report.md            ← qa agent output
 ├── memory-log.md           ← mem agent output
-└── orchestrator/        ← orchestrator loop state (goal.md, plan-N.md, findings-N.md, verify/)
+└── orchestrator/           ← orchestrator loop state (goal.md, plan-N.md, findings-N.md, verify/)
 ```
 
 ### Persistent memory (written by mem, indexed by qmd)
@@ -81,30 +76,22 @@ memory/                    ← project-local (versioned with repo)
 ```
   User
    │
-   │  /mode scout  /mode plan  /mode dev  /mode deploy  /mode qa  /mode mem
-   ▼  ──────────  ──────────  ─────────  ───────────  ────────  ─────────
-   │  /mode scout  /mode plan       /mode builder
-   ▼  ──────────  ──────────       ─────────────
+   │  Manual:        /mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
+   │  Semi-auto:     /mode scout → /mode plan → /mode builder   (auto: coders → qa → mem)
+   │  Orchestrator:  /mode orchestrator                         (autonomous goal loop)
+   ▼  ──────────    ──────────    ──────────    ───────────
   OpenCode (terminal)
    │
-   ├─ scout   ──► OpenCode    (glm-5.1, cloud)
-   ├─ plan    ──► OpenCode    (qwen3.7-plus, cloud)
-   │   └─► mem (auto) ──► oMLX :8005  ← saves research + plan
-   ├─ builder ──► OpenCode    (deepseek-v4-flash, cloud)
-   │   ├─ coder ──► oMLX :8005  (gemma-4-e4b-it-4bit, local, no MCPs)
-   │   ├─ coder ──► oMLX :8005  (gemma-4-e4b-it-4bit, local, no MCPs)
-   │   └─ coder ──► oMLX :8005  (gemma-4-e4b-it-4bit, local, no MCPs)
-   │   └─► qa (auto)  ──► oMLX :8005  ← validates build
-   │   └─► mem (auto) ──► oMLX :8005  ← saves build + QA result (always)
-   │
-   ├─ dev     ──► oMLX :8005  (gemma-4-e4b-it-4bit, standalone mode)
    ├─ scout ──► OpenCode (deepseek-v4-flash, cloud-free)
    ├─ plan  ──► OpenCode (kimi-k3, cloud)
-   ├─ dev   ──► OpenCode (deepseek-v4-flash, cloud-free)
+   │   └─► mem (auto) ──► saves research + plan
+   ├─ dev ────► OpenCode (deepseek-v4-flash, cloud-free) — standalone mode
    ├─ deploy ─► OpenCode (deepseek-v4-flash, cloud-free)
+   ├─ builder ► OpenCode (deepseek-v4-flash, cloud-free)
+   │   ├─ coder ──► OpenCode (deepseek-v4-flash, no MCPs)  ×N parallel
+   │   ├─► qa (auto)  ──► validates build
+   │   └─► mem (auto) ──► saves build + QA result (always)
    ├─ orchestrator ─► OpenCode (deepseek-v4-flash, cloud-free) — autonomous container loop
-   ├─ qa    ──► OpenCode (deepseek-v4-flash, cloud-free)
-   └─ mem   ──► OpenCode (deepseek-v4-flash, cloud-free)
    │
    ├─ context-mode MCP ─── sandboxed execution (MANDATORY — all agents route I/O through this)
    ├─ qmd MCP ──────────── local semantic search (query, get, multi_get, status)
@@ -260,21 +247,18 @@ Local semantic search with BM25 + vector + LLM reranking. Collections: `tasks`, 
 ## Key Decisions & Learnings
 
 - **oMLX port**: 8005 (matches actual running instance)
-- **Pipeline models (2026-08-25)**: scout/dev/deploy/qa/mem → `opencode-go/deepseek-v4-flash` (cloud-free); plan → `opencode-go/kimi-k3`. oMLX/Qwen3.5-9B retained for manual use, no longer a pipeline default.
+- **Pipeline models (2026-08-27, post-merge normalization)**: ALL pipeline agents are cloud — scout/dev/deploy/builder/orchestrator/coder/qa/mem → `opencode-go/deepseek-v4-flash` (cloud-free); plan → `opencode-go/kimi-k3`. The pre-merge ESP branch's local assignments (omlx/gemma-4 for coder/qa/mem/dev, qwen3.7-plus for plan, glm-5.1 for scout) are retired.
 - **Context limits**: deepseek-v4-flash free tier ~32768 context / 8192 output — context-mode routing is load-bearing, not optional (one raw dump > budget). compaction reserved 4000.
-- **oMLX (manual)**: Qwen3.5-9B-OptiQ-4bit, 9B params, 32k context — available via `omlx/` provider for local-only runs when needed.
-- **Local model**: gemma-4-e4b-it-4bit for all local agents (via oMLX, fits 32GB Mac at 32k context)
-- **Cloud models**: opencode-go/qwen3.7-plus for plan, opencode-go/deepseek-v4-flash for builder (cost-controlled)
-- **Context limits**: 32768 context / 4096 output for local model, compaction reserved 4000
+- **oMLX (manual only)**: Qwen3.5-9B-OptiQ-4bit, 9B params, 32k context — available via `omlx/` provider for local-only runs when needed. Not a pipeline default.
 - **oMLX context scaling**: Must be enabled in admin dashboard (http://127.0.0.1:8005/admin) — Claude Code Optimization
 - **context-mode**: Plugin + MCP tool routing — all I/O goes through sandbox
 - **qmd**: Bun-based MCP server (`bunx @tobilu/qmd mcp`) for persistent semantic memory
 
 ---
 
-## oMLX Integration Notes
+## oMLX Integration Notes (manual use)
 
 - **Context scaling**: Enable in oMLX admin dashboard → Claude Code Optimization. This makes oMLX report a larger context to OpenCode so compaction triggers before the real limit is hit.
 - **Memory limit**: Set Memory Limit (Models Only) to ~20GB in oMLX admin dashboard.
 - **Prefill behavior**: MLX performs full prefill before emitting tokens. Time-to-first-token rises linearly with input length. Keep system prompt small.
-- **KV cache**: Memory scales linearly with configured context limit. gemma-4-e4b-it-4bit at 32k context uses ~4-6 GB KV cache (fits in 32GB Mac).
+- **KV cache**: Memory scales linearly with configured context limit. 9B model at 32k context uses ~4-6 GB KV cache (fits in 32GB Mac).

@@ -1,8 +1,6 @@
 ---
 name: mem
 description: Memory agent. Commits research, plans, build records, task summaries, and patterns to qmd persistent memory. Auto-spawned by plan (post-plan) and builder (post-build). Also available manually via /mode mem.
-model: omlx/gemma-4-e4b-it-4bit
-description: Memory agent. Commits task summaries, code patterns, and archived plans to qmd persistent memory after a successful QA pass. Runs /mode mem after QA completes.
 model: opencode-go/deepseek-v4-flash
 mode: subagent
 temperature: 0.1
