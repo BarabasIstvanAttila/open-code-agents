@@ -1,7 +1,7 @@
 ---
 name: coder
 description: Focused implementation subagent. Receives a specific task from the builder with all necessary context inline. No MCP tools — context isolation. Returns structured summary of changes made.
-model: opencode-go/deepseek-v4-flash
+model: omlx/gemma-4-e4b-it-4bit
 mode: subagent
 temperature: 0.05
 permission:
