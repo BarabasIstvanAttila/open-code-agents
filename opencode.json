@@ -2,7 +2,7 @@
   "$schema": "https://opencode.ai/config.json",
   "autoshare": false,
   "theme": "opencode",
-  "model": "omlx/gemma-4-e4b-it-4bit",
+  "model": "opencode/glm-5.1",
   "small_model": "opencode-go/deepseek-v4-flash",
   "default_agent": "dev",
   "autoupdate": true,
@@ -31,40 +31,12 @@
     "question": "allow"
   },
   "watcher": {
-    "ignore": [
-      "node_modules/**",
-      "dist/**",
-      ".git/**",
-      ".agent/**",
-      "build/**",
-      "managed_components/**",
-      "sdkconfig.old",
-      "dependencies.lock"
-    ]
+    "ignore": ["node_modules/**", "dist/**", ".git/**", ".agent/**"]
   },
-  "lsp": {
-    "clangd": {
-      "command": [
-        "/Users/atti/.espressif/tools/esp-clang/esp-18.1.2_20240912/esp-clang/bin/clangd",
-        "--background-index",
-        "--clang-tidy",
-        "--completion-style=detailed",
-        "--header-insertion=never",
-        "--query-driver=/Users/atti/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp-elf-*-gcc",
-        "--compile-commands-dir=build"
-      ],
-      "env": {
-        "IDF_PATH": "/Users/atti/esp/esp-idf"
-      },
-      "extensions": [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh"]
-    }
-  },
-
-  "shell": ".opencode/esp-shell.sh",
-
   "compaction": {
     "auto": true,
-    "prune": true
+    "prune": true,
+    "reserved": 4000
   },
   "server": {
     "port": 4096,
@@ -86,14 +58,7 @@
           "name": "Qwen3.5-9B-OptiQ-4bit",
           "limit": {
             "context": 32768,
-            "output": 8192
-          }
-        },
-        "gemma-4-e4b-it-4bit": {
-          "name": "gemma-4-e4b-it-4bit",
-          "limit": {
-            "context": 32768,
-            "output": 8192
+            "output": 4096
           }
         }
       }
@@ -110,20 +75,6 @@
           "limit": {
             "context": 202752,
             "output": 131072
-          }
-        },
-        "qwen3.7-plus": {
-          "name": "opencode-go/qwen3.7-plus",
-          "limit": {
-            "context": 202752,
-            "output": 131072
-          }
-        },
-        "deepseek-v4-flash": {
-          "name": "opencode-go/deepseek-v4-flash",
-          "limit": {
-            "context": 32768,
-            "output": 8192
           }
         },
         "nemotron-3-super-free": {
@@ -144,6 +95,15 @@
     }
   },
   "mcp": {
+    "context-mode": {
+      "type": "local",
+      "command": ["bun", "/Users/atti/node_modules/context-mode/cli.bundle.mjs"],
+      "environment": {
+        "CONTEXT_MODE_PLATFORM": "opencode"
+      },
+      "timeout": 300000,
+      "enabled": true
+    },
     "context7": {
       "type": "remote",
       "url": "https://mcp.context7.com/mcp",
@@ -180,8 +140,5 @@
     "context-mode*": true,
     "qmd*": true,
     "playwright*": true
-  },
-  "plugin": [
-    "context-mode"
-  ]
+  }
 }

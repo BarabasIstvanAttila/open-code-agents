@@ -1,25 +1,18 @@
 # OpenCode Agent Pipeline — Configuration & Rules
 
 **oMLX · qmd · context-mode · OpenCode**  
-*Six primary agents, three subagents. Cloud models via opencode-go (deepseek-v4-flash + kimi-k3). oMLX retained for manual local-only runs.*
+*Five primary agents, two subagents. Free cloud models via opencode-go (deepseek-v4-flash + kimi-k3); oMLX retained for manual use.*
 
 ---
 
 ## Agent Pipeline
 
-Three flows — pick by task shape:
-
-**1. Manual flow (every step user-invoked — full control):**
 ```
 /mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
 ```
 
-**2. Semi-automatic development flow (builder orchestrates implementation — recommended for multi-file tasks):**
-```
-/mode scout → /mode plan → [auto: mem] → /mode builder → [auto: coders → qa → mem]
-```
+Container-development goals take the autonomous loop instead:
 
-**3. Goal-driven orchestrator flow (autonomous container loop — container/devops goals):**
 ```
 /mode orchestrator    (plan → implement → deploy one-by-one → curl+browser verify → findings → re-plan, until DoD green)
 ```
@@ -27,46 +20,34 @@ Three flows — pick by task shape:
 | Agent | Mode | Model | Role |
 |-------|------|-------|------|
 | **scout** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Research — gather context, map codebase, fetch docs |
-| **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan, auto-spawn mem |
-| **builder** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Orchestrate — decompose plan, spawn coders, auto-spawn qa + mem |
-| **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Standalone implementation — simple tasks that skip the builder |
+| **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan |
+| **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Implement — ReAct loop, follow plan step by step |
 | **deploy** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Deploy — compose stacks over SSH, deterministic smoke, deploy verdict (uses `homelab-deploy` skill) |
 | **orchestrator** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Container loop — goal→plan→implement→verify locally (one container at a time, curl + Playwright browser), findings-driven iterations (uses `docker-loop` skill) |
-| **coder** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Focused implementation — spawned by builder, no MCPs, context-isolated |
-| **qa** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Validate — tests, lint, typecheck, plan compliance (auto-spawned by builder) |
-| **mem** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Memory — commit artifacts (auto-spawned by plan and builder) |
+| **qa** - @qa| subagent | opencode-go/deepseek-v4-flash (cloud-free) | Validate — tests, lint, typecheck, plan compliance |
+| **mem** - @mem| subagent | opencode-go/deepseek-v4-flash (cloud-free) | Memory — commit task summaries, patterns, rebuild qmd index |
 
 ### Working files (per project, git-ignored)
 
 ```
 .agent/
-├── research-report.md      ← scout output
-├── plan.md                 ← plan agent output
-├── builder-progress.md     ← builder runtime progress tracking
-├── builder-report.md       ← builder final report
-├── dev-report.md           ← dev agent output (standalone mode)
-├── deploy-report.md        ← deploy agent output
-├── qa-report.md            ← qa agent output
-├── memory-log.md           ← mem agent output
-└── orchestrator/           ← orchestrator loop state (goal.md, plan-N.md, findings-N.md, verify/)
+├── research-report.md   ← scout output
+├── plan.md              ← plan agent output
+├── dev-report.md        ← dev agent output
+├── deploy-report.md     ← deploy agent output
+├── qa-report.md         ← qa agent output
+├── memory-log.md        ← mem agent output
+└── orchestrator/        ← orchestrator loop state (goal.md, plan-N.md, findings-N.md, verify/)
 ```
 
 ### Persistent memory (written by mem, indexed by qmd)
 
 ```
 memory/                    ← project-local (versioned with repo)
-├── tasks/                 ← task summaries
-├── patterns/              ← code patterns
-├── plans/                 ← archived plans
-├── research/              ← archived research
-└── builds/                ← per-task build records (created by builder)
-    └── <date>-<slug>/
-        ├── plan.md        ← copy of plan used
-        ├── research.md    ← copy of research used
-        ├── steps/         ← per-step implementation records
-        │   ├── 01-step-name.md
-        │   └── ...
-        └── summary.md     ← build results summary
+├── tasks/               ← task summaries
+├── patterns/            ← code patterns
+├── plans/               ← archived plans
+└── research/            ← archived research
 ```
 
 ---
@@ -76,22 +57,17 @@ memory/                    ← project-local (versioned with repo)
 ```
   User
    │
-   │  Manual:        /mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
-   │  Semi-auto:     /mode scout → /mode plan → /mode builder   (auto: coders → qa → mem)
-   │  Orchestrator:  /mode orchestrator                         (autonomous goal loop)
-   ▼  ──────────    ──────────    ──────────    ───────────
+   │  /mode scout  /mode plan  /mode dev  /mode deploy  /mode qa  /mode mem
+   ▼  ──────────  ──────────  ─────────  ───────────  ────────  ─────────
   OpenCode (terminal)
    │
    ├─ scout ──► OpenCode (deepseek-v4-flash, cloud-free)
    ├─ plan  ──► OpenCode (kimi-k3, cloud)
-   │   └─► mem (auto) ──► saves research + plan
-   ├─ dev ────► OpenCode (deepseek-v4-flash, cloud-free) — standalone mode
+   ├─ dev   ──► OpenCode (deepseek-v4-flash, cloud-free)
    ├─ deploy ─► OpenCode (deepseek-v4-flash, cloud-free)
-   ├─ builder ► OpenCode (deepseek-v4-flash, cloud-free)
-   │   ├─ coder ──► OpenCode (deepseek-v4-flash, no MCPs)  ×N parallel
-   │   ├─► qa (auto)  ──► validates build
-   │   └─► mem (auto) ──► saves build + QA result (always)
    ├─ orchestrator ─► OpenCode (deepseek-v4-flash, cloud-free) — autonomous container loop
+   ├─ qa    ──► OpenCode (deepseek-v4-flash, cloud-free)
+   └─ mem   ──► OpenCode (deepseek-v4-flash, cloud-free)
    │
    ├─ context-mode MCP ─── sandboxed execution (MANDATORY — all agents route I/O through this)
    ├─ qmd MCP ──────────── local semantic search (query, get, multi_get, status)
@@ -101,94 +77,24 @@ memory/                    ← project-local (versioned with repo)
    └─ sequentialthinking ─ structured reasoning chains
 ```
 
-### Auto-Spawn Chain
-
-```
-plan ──► mem (post-plan: saves research + plan)
-builder ──► coders (parallel) ──► qa ──► mem (post-build: saves build + QA result, always)
-```
-
-- **Plan** always spawns mem after writing the plan
-- **Builder** always spawns QA after coders complete
-- **Builder** always spawns mem after QA — pass AND fail — failures are logged for future learning
-- **QA failures** are recorded in memory so future plan runs can search for them and create fixes
-
-### Builder → Coder Flow
-
-The builder agent decomposes the plan into discrete work items and spawns coder subagents:
-
-1. **Parse** plan into steps with dependencies
-2. **Create** build folder: `memory/builds/<date>-<slug>/`
-3. **Batch** independent steps (no file overlaps) for parallel execution
-4. **Compose** focused prompts with all context inline (coder has NO MCPs)
-5. **Spawn** coder subagents via `task(subagent_type: "coder", prompt: ...)`
-6. **Collect** results and record per-step in `memory/builds/<slug>/steps/`
-7. **Track** progress in `.agent/builder-progress.md`
-8. **Finalize** with `memory/builds/<slug>/summary.md`
-9. **Spawn QA** to validate the build
-10. **Spawn mem** to commit all artifacts (including QA failures)
-
-### Context Isolation
-
-Coder subagents have **no MCP tools** (no context7, duckduckgo, sequentialthinking, qmd, context-mode). All context is provided inline by the builder in the task prompt. This prevents context pollution and keeps coder prompts focused.
-
----
-
-## ESP32 / ESP-IDF Development
-
-When working on ESP-IDF projects, two domain skills are available to all agents:
-
-- `esp32-idf` — Toolchain ops: idf.py commands, LSP interpretation, build/flash/debug
-- `esp32-patterns` — Domain patterns: FreeRTOS, GPIO, SPI/I2C, NVS, C++ idioms
-
-Skills are lazy-loaded on-demand — zero token cost until an agent needs them.
-
-### LSP Integration
-
-OpenCode is configured with `esp-clangd` (ESP-IDF's LLVM-based clangd) for C/C++:
-
-| Component | Purpose |
-|-----------|---------|
-| `build/compile_commands.json` | LSP index — refresh with `idf.py reconfigure` |
-| `.clangd` | Filters GCC-only flags that clangd rejects |
-| `esp-clangd` | Cross-compiler-aware LSP server (Xtensa + RISC-V) |
-
-### Signal Trust Order
-
-1. `idf.py build` output → ground truth for compilation and linking
-2. `idf.py monitor` output → ground truth for runtime behavior
-3. LSP diagnostics → fast edit-time signal (may have false positives if index is stale)
-
-### ESP-IDF Quick Start
-
-```bash
-# In your ESP-IDF project directory:
-. $IDF_PATH/export.sh
-bash path/to/opencode-shared/scripts/init-esp32.sh
-opencode
-```
-
-### Custom Slash Commands
-
-| Command | Description |
-|---------|-------------|
-| `/esp-build` | Build firmware + error report |
-| `/esp-check` | Refresh LSP index + diagnostics |
-| `/esp-flash <port>` | Flash + monitor connected device |
-| `/esp-size` | Binary size breakdown by component |
-| `/esp-new-component <name>` | Scaffold a new ESP-IDF component |
-
-### Safety Rules
-
-- Never mark a task done without a clean `idf.py build`
-- Never edit files in `build/` or `managed_components/`
-- `idf.py flash` and `idf.py erase_flash` require user confirmation
-
 ---
 
 ## context-mode — MANDATORY routing rules
 
 One unrouted command dumps 56 KB into context. All I/O goes through context-mode tools.
+
+> **Transport: MCP server (not plugin) — 2026-10-19.** OpenCode v2 replaced the V1 plugin contract
+> (`export default { id, server }`) with `{ id, setup }` / `{ id, effect }`. context-mode still ships the
+> V1 shape in every published version (1.0.151 → 1.0.169) and on `main`, so `plugin: ["context-mode"]`
+> fails to load: *"Plugin must export a default definition with an id and an effect or setup function."*
+> context-mode therefore runs as a **local MCP server** (`mcp.context-mode` in `opencode.json`, command
+> `bun /Users/atti/node_modules/context-mode/cli.bundle.mjs`, `CONTEXT_MODE_PLATFORM=opencode`).
+> All 11 `ctx_*` tools work; **routing is prompt-level only** — the plugin's `tool.execute.before`
+> hook that programmatically blocked `curl`/`wget` is gone, so the BLOCKED list below is now a rule
+> the model follows, not one the host enforces. Do not rely on it to stop a stray `curl`.
+> `ctx_doctor` reporting `Plugin registration: No plugin array found` and
+> `Legacy MCP registration: mcp.context-mode is redundant` is **expected** in this mode — both checks
+> assume the V1 plugin path. Restore the plugin only when upstream ships a V2 `setup()` export.
 
 ### BLOCKED
 
@@ -233,7 +139,7 @@ On resume, search BEFORE asking the user:
 
 ## qmd — Persistent Knowledge Base
 
-Local semantic search with BM25 + vector + LLM reranking. Collections: `tasks`, `patterns`, `plans`, `research`, `builds` in `memory/`.
+Local semantic search with BM25 + vector + LLM reranking. Collections: `tasks`, `patterns`, `plans`, `research` in `memory/`.
 
 | Tool | When to use |
 |------|-------------|
@@ -247,16 +153,16 @@ Local semantic search with BM25 + vector + LLM reranking. Collections: `tasks`, 
 ## Key Decisions & Learnings
 
 - **oMLX port**: 8005 (matches actual running instance)
-- **Pipeline models (2026-08-27, post-merge normalization)**: ALL pipeline agents are cloud — scout/dev/deploy/builder/orchestrator/coder/qa/mem → `opencode-go/deepseek-v4-flash` (cloud-free); plan → `opencode-go/kimi-k3`. The pre-merge ESP branch's local assignments (omlx/gemma-4 for coder/qa/mem/dev, qwen3.7-plus for plan, glm-5.1 for scout) are retired.
+- **Pipeline models (2026-08-25)**: scout/dev/deploy/qa/mem → `opencode-go/deepseek-v4-flash` (cloud-free); plan → `opencode-go/kimi-k3`. oMLX/Qwen3.5-9B retained for manual use, no longer a pipeline default.
 - **Context limits**: deepseek-v4-flash free tier ~32768 context / 8192 output — context-mode routing is load-bearing, not optional (one raw dump > budget). compaction reserved 4000.
-- **oMLX (manual only)**: Qwen3.5-9B-OptiQ-4bit, 9B params, 32k context — available via `omlx/` provider for local-only runs when needed. Not a pipeline default.
+- **oMLX (manual)**: Qwen3.5-9B-OptiQ-4bit, 9B params, 32k context — available via `omlx/` provider for local-only runs when needed.
 - **oMLX context scaling**: Must be enabled in admin dashboard (http://127.0.0.1:8005/admin) — Claude Code Optimization
-- **context-mode**: Plugin + MCP tool routing — all I/O goes through sandbox
+- **context-mode**: MCP server (2026-10-19; was a V1 plugin) — all I/O goes through sandbox. V1 plugin contract is dead in OpenCode v2; upstream has no V2 `setup()` export yet
 - **qmd**: Bun-based MCP server (`bunx @tobilu/qmd mcp`) for persistent semantic memory
 
 ---
 
-## oMLX Integration Notes (manual use)
+## oMLX Integration Notes
 
 - **Context scaling**: Enable in oMLX admin dashboard → Claude Code Optimization. This makes oMLX report a larger context to OpenCode so compaction triggers before the real limit is hit.
 - **Memory limit**: Set Memory Limit (Models Only) to ~20GB in oMLX admin dashboard.
