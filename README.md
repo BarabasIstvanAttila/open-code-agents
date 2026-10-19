@@ -4,6 +4,7 @@ Local-first AI agent infrastructure for OpenCode. Provides a complete agent pipe
 
 **Use case**: Add this as a Git submodule to any project to get full AI-powered development support running locally through OpenCode.
 
+
 ---
 
 ## Architecture
@@ -561,6 +562,21 @@ cd .opencode && bun install    # Installs @opencode-ai/plugin
 ```
 
 ---
+
+
+## Articles
+
+https://github.com/criterium/opencode-lab/tree/main/research/memory-system
+https://mariozechner.at/posts/2026-03-25-thoughts-on-slowing-the-fuck-down/
+https://walkinglabs.github.io/learn-harness-engineering/en/
+https://mcpmarket.com/
+https://grokkingthesystemdesign.com/guides/agentic-system-design/#multi-agent-system-design-and-coordination-patterns
+https://datasciencedojo.com/blog/agentic-loops-explained-from-react-to-loop-engineering-2026-guide/
+https://pi.dev/packages/pi-knowledge
+https://annycedavis.com/2026/09/tokens-rule-everything-around-me.html
+https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing
+https://aaif.io/projects/goose
+https://github.com/jellydn/my-ai-tools
 
 ## License
 
