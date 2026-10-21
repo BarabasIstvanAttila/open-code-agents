@@ -1,6 +1,6 @@
 ---
 name: homelab-deploy
-description: Use when deploying or verifying Docker compose stacks on HomeLab hosts (pi3; nas/mac-studio later) from this Mac. Covers SSH deploy conventions, compose-file-per-stack layout, cwd/mount rules, git-drift gate, rollback pattern, and deterministic curl smoke verification. Pair with /mode deploy.
+description: Use when deploying or verifying Docker compose stacks on HomeLab hosts (pi3; nas/mac-studio later) from this Mac. Covers SSH deploy conventions, compose-file-per-stack layout, cwd/mount rules, git-drift gate, rollback pattern, and deterministic curl smoke verification. Pair with /mode build.
 ---
 
 # HomeLab Deploy + Verify

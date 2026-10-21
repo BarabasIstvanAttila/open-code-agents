@@ -4,7 +4,7 @@
   "theme": "opencode",
   "model": "opencode/glm-5.1",
   "small_model": "opencode-go/deepseek-v4-flash",
-  "default_agent": "dev",
+  "default_agent": "build",
   "autoupdate": true,
   "lsp": true,
   "snapshot": true,

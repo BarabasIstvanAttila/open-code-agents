@@ -1,46 +1,38 @@
-# OpenCode Agent Pipeline — Configuration & Rules
+# OpenCode Agent Configuration — Rules & Learnings
 
 **oMLX · qmd · context-mode · OpenCode**  
-*Five primary agents, two subagents. Free cloud models via opencode-go (deepseek-v4-flash + kimi-k3); oMLX retained for manual use.*
+*Four agents: built-in `build` plus custom `plan`, `researcher`, and `orchestrator`. Free cloud models via opencode-go (deepseek-v4-flash + kimi-k3); oMLX retained for manual use.*
 
 ---
 
-## Agent Pipeline
+## Agents
 
 ```
-/mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
+/mode researcher → read-only research → .agent/research-report.md
+/mode plan    → file-specific implementation plan from research (3-round cap)
+/mode build   → implement the plan (OpenCode default agent, default_agent in opencode.json)
+/mode orchestrator → autonomous container loop (local Docker, one container at a time)
 ```
 
-Container-development goals take the autonomous loop instead:
+| Agent | Source | Mode | Model | Role |
+|-------|--------|------|-------|------|
+| **researcher** | `.opencode/agent/researcher.md` (custom) | primary | opencode-go/deepseek-v4-flash (cloud-free) | Research — read-only codebase mapping + doc fetches, writes only `.agent/research-report.md` |
+| **plan** | `.opencode/agent/plan.md` (custom) | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan |
+| **build** | OpenCode built-in | primary | opencode/glm-5.1 | Implement — follow the plan step by step, edit files, run commands |
+| **orchestrator** | `.opencode/agent/orchestrator.md` (custom) | primary | opencode-go/deepseek-v4-flash (cloud-free) | Container loop — goal→plan→implement→verify locally (one container at a time, curl + Playwright browser), findings-driven iterations (uses `docker-loop` skill) |
 
-```
-/mode orchestrator    (plan → implement → deploy one-by-one → curl+browser verify → findings → re-plan, until DoD green)
-```
-
-| Agent | Mode | Model | Role |
-|-------|------|-------|------|
-| **scout** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Research — gather context, map codebase, fetch docs |
-| **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan |
-| **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Implement — ReAct loop, follow plan step by step |
-| **deploy** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Deploy — compose stacks over SSH, deterministic smoke, deploy verdict (uses `homelab-deploy` skill) |
-| **orchestrator** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Container loop — goal→plan→implement→verify locally (one container at a time, curl + Playwright browser), findings-driven iterations (uses `docker-loop` skill) |
-| **qa** - @qa| subagent | opencode-go/deepseek-v4-flash (cloud-free) | Validate — tests, lint, typecheck, plan compliance |
-| **mem** - @mem| subagent | opencode-go/deepseek-v4-flash (cloud-free) | Memory — commit task summaries, patterns, rebuild qmd index |
+Built-in subagents (`explore`, `general`) handle delegated research and parallel work; no project-local subagents are defined.
 
 ### Working files (per project, git-ignored)
 
 ```
 .agent/
-├── research-report.md   ← scout output
+├── research-report.md   ← researcher output (only file it may write)
 ├── plan.md              ← plan agent output
-├── dev-report.md        ← dev agent output
-├── deploy-report.md     ← deploy agent output
-├── qa-report.md         ← qa agent output
-├── memory-log.md        ← mem agent output
-└── orchestrator/        ← orchestrator loop state (goal.md, plan-N.md, findings-N.md, verify/)
+└── orchestrator/        ← orchestrator loop state (goal.md, plan-N.md, findings-N.md, report.md, verify/)
 ```
 
-### Persistent memory (written by mem, indexed by qmd)
+### Persistent memory (indexed by qmd)
 
 ```
 memory/                    ← project-local (versioned with repo)
@@ -57,17 +49,14 @@ memory/                    ← project-local (versioned with repo)
 ```
   User
    │
-   │  /mode scout  /mode plan  /mode dev  /mode deploy  /mode qa  /mode mem
-   ▼  ──────────  ──────────  ─────────  ───────────  ────────  ─────────
+   │  /mode researcher  /mode plan  /mode build  /mode orchestrator
+   ▼  ────────────────  ──────────  ───────────  ──────────────────
   OpenCode (terminal)
    │
-   ├─ scout ──► OpenCode (deepseek-v4-flash, cloud-free)
-   ├─ plan  ──► OpenCode (kimi-k3, cloud)
-   ├─ dev   ──► OpenCode (deepseek-v4-flash, cloud-free)
-   ├─ deploy ─► OpenCode (deepseek-v4-flash, cloud-free)
+   ├─ researcher ─► OpenCode (deepseek-v4-flash, cloud-free) — read-only; writes only .agent/research-report.md
+   ├─ plan  ──► OpenCode (kimi-k3, cloud) — writes .agent/plan.md, edit denied elsewhere
+   ├─ build ──► OpenCode (glm-5.1, default) — implements the plan
    ├─ orchestrator ─► OpenCode (deepseek-v4-flash, cloud-free) — autonomous container loop
-   ├─ qa    ──► OpenCode (deepseek-v4-flash, cloud-free)
-   └─ mem   ──► OpenCode (deepseek-v4-flash, cloud-free)
    │
    ├─ context-mode MCP ─── sandboxed execution (MANDATORY — all agents route I/O through this)
    ├─ qmd MCP ──────────── local semantic search (query, get, multi_get, status)
@@ -115,7 +104,7 @@ One unrouted command dumps 56 KB into context. All I/O goes through context-mode
 
 | Risk | Rule |
 |------|------|
-| **Multi-line shell & nested quotes** | If a `ctx_execute("shell", code)` script is **>5 lines OR contains any `"` inside already-quoted strings**, write it as a temp `.sh` file in the workspace (via the `write` tool — file lives on host, sandbox can read it) and execute with `ctx_execute("shell", "bash /Users/atti/Projects/HomeLab/.agent/tmp/verify-NNN.sh")`. Removes the nested-quoting class of bugs. Single-purpose, ≤5-line scripts can stay inline. |
+| **Multi-line shell & nested quotes** | If a `ctx_execute("shell", code)` script is **>5 lines OR contains any `"` inside already-quoted strings**, write it as a temp `.sh` file in the workspace (via the `write` tool — file lives on host, sandbox can read it) and execute with `ctx_execute("shell", "bash <project>/.agent/tmp/verify-NNN.sh")`. Removes the nested-quoting class of bugs. Single-purpose, ≤5-line scripts can stay inline. |
 | **On tool error → STOP, don't mutate** | If a tool returns `invalid arguments`, `unmatched "`, or `Exit code 1`, fix the **original** call by re-reading its schema. Do NOT retry with: a different tool name, an empty tool name, a truncated/invented path, or a no-op probe. One schema-driven retry, then surface to the user. |
 | **Retry cap** | Max **2 retries** for the SAME tool after a hard error. On the 3rd failure → tell the user and stop. No doom loops. |
 | **Path hygiene** | Every path passed to a tool must be a known-existing absolute path (or a deliberate new file under the workspace). Never invent a path like `/a/bash` to "test" state — opencode's `external_directory` guard flags it and aborts the turn. |
@@ -132,8 +121,9 @@ On resume, search BEFORE asking the user:
 | Need | Command |
 |------|---------|
 | What did we decide? | `ctx_search(queries: ["decision"], source: "decision", sort: "timeline")` |
+| What did research find? | `ctx_search(queries: ["research"], source: "research", sort: "timeline")` |
 | What was the plan? | `ctx_search(queries: ["plan"], source: "plan", sort: "timeline")` |
-| What did dev implement? | `ctx_search(queries: ["dev-progress"], source: "dev-progress", sort: "timeline")` |
+| What happened last loop iteration? | `ctx_search(queries: ["orchestrator"], source: "orchestrator-iteration", sort: "timeline")` |
 
 ---
 
@@ -153,12 +143,14 @@ Local semantic search with BM25 + vector + LLM reranking. Collections: `tasks`, 
 ## Key Decisions & Learnings
 
 - **oMLX port**: 8005 (matches actual running instance)
-- **Pipeline models (2026-08-25)**: scout/dev/deploy/qa/mem → `opencode-go/deepseek-v4-flash` (cloud-free); plan → `opencode-go/kimi-k3`. oMLX/Qwen3.5-9B retained for manual use, no longer a pipeline default.
+- **Agent set (2026-10-21)**: built-in `build` + `plan` plus custom `researcher` and `orchestrator`. Removed `scout`, `dev`, `coder`, `deploy`, `qa`, `mem`, `oracle`, `builder`. `researcher` replaces `scout` with a read-only permission model — reads everything in the project, runs only read-only commands, and may write exactly one file (`.agent/research-report.md`). `opencode.json` `default_agent` is `build`.
+- **Models (2026-10-21)**: default model → `opencode/glm-5.1`; small model → `opencode-go/deepseek-v4-flash`; plan agent → `opencode-go/kimi-k3`; orchestrator → `opencode-go/deepseek-v4-flash`. oMLX/Qwen3.5-9B retained for manual use only.
 - **Context limits**: deepseek-v4-flash free tier ~32768 context / 8192 output — context-mode routing is load-bearing, not optional (one raw dump > budget). compaction reserved 4000.
 - **oMLX (manual)**: Qwen3.5-9B-OptiQ-4bit, 9B params, 32k context — available via `omlx/` provider for local-only runs when needed.
 - **oMLX context scaling**: Must be enabled in admin dashboard (http://127.0.0.1:8005/admin) — Claude Code Optimization
 - **context-mode**: MCP server (2026-10-19; was a V1 plugin) — all I/O goes through sandbox. V1 plugin contract is dead in OpenCode v2; upstream has no V2 `setup()` export yet
 - **qmd**: Bun-based MCP server (`bunx @tobilu/qmd mcp`) for persistent semantic memory
+- **Agent permissions**: `plan.md` grants `read/glob/grep/list/skill/question/webfetch/websearch` explicitly and restricts `edit` to `.agent/*` — it plans but never implements. MCP tools (context-mode, qmd, duckduckgo) need no per-agent keys; they are enabled globally via the `tools` block in `opencode.json`.
 
 ---
 
