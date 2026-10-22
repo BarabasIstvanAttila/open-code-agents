@@ -4,7 +4,11 @@
 .env
 node_modules/
 .DS_Store
-memory/tasks/
-memory/patterns/
-memory/plans/
-memory/research/
+memory/tasks/*
+memory/patterns/*
+memory/plans/*
+memory/research/*
+memory/mistakes/*
+memory/ghost/*
+memory/decisions/*
+memory/builds/*

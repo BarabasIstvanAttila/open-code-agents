@@ -32,15 +32,33 @@ Built-in subagents (`explore`, `general`) handle delegated research and parallel
 └── orchestrator/        ← orchestrator loop state (goal.md, plan-N.md, findings-N.md, report.md, verify/)
 ```
 
-### Persistent memory (indexed by qmd)
+### Persistent memory (indexed by qmd, OKF frontmatter)
 
 ```
 memory/                    ← project-local (versioned with repo)
-├── tasks/               ← task summaries
-├── patterns/            ← code patterns
-├── plans/               ← archived plans
-└── research/            ← archived research
+├── index.md             ← map (not indexed)
+├── log.md               ← append-only change log (not indexed)
+├── tasks/               ← task summaries          type: task
+├── patterns/            ← code patterns           type: pattern
+├── plans/               ← archived plans          type: plan
+├── research/            ← archived research       type: research
+├── builds/              ← build records           type: build
+├── decisions/           ← decision log            type: decision
+├── mistakes/            ← mistake ledger          type: mistake
+├── ghost/               ← ghost reference area    (not linted/pruned)
+└── .archive/            ← pruned files (not indexed)
 ```
+
+Every concept file starts with OKF frontmatter (`type`, `title`, `description`,
+`tags`, `timestamp`); `type` is the singular collection name (`tasks/`→`task`).
+Template:
+`templates/memory-frontmatter.md`. Validate with `scripts/memory-lint.sh`.
+Retention: `scripts/memory-prune.sh [--days N] [--dry-run]` moves stale or
+`status: archived` files to `.archive/` and runs `qmd update && qmd cleanup`
+(qmd has no TTL of its own). Session capture: `scripts/session-distill.sh
+[--session ses_…] [--dry-run] [--note]` turns a session into
+decisions/mistakes/build records (or use `/distill`); `/prune` runs retention
+with a dry-run confirmation gate.
 
 ---
 
@@ -70,51 +88,47 @@ memory/                    ← project-local (versioned with repo)
 
 ## context-mode — MANDATORY routing rules
 
-One unrouted command dumps 56 KB into context. All I/O goes through context-mode tools.
+One unrouted command dumps 56 KB into context. All I/O goes through the context-mode MCP server.
 
-> **Transport: MCP server (not plugin) — 2026-10-19.** OpenCode v2 replaced the V1 plugin contract
-> (`export default { id, server }`) with `{ id, setup }` / `{ id, effect }`. context-mode still ships the
-> V1 shape in every published version (1.0.151 → 1.0.169) and on `main`, so `plugin: ["context-mode"]`
-> fails to load: *"Plugin must export a default definition with an id and an effect or setup function."*
-> context-mode therefore runs as a **local MCP server** (`mcp.context-mode` in `opencode.json`, command
-> `bun /Users/atti/node_modules/context-mode/cli.bundle.mjs`, `CONTEXT_MODE_PLATFORM=opencode`).
-> All 11 `ctx_*` tools work; **routing is prompt-level only** — the plugin's `tool.execute.before`
-> hook that programmatically blocked `curl`/`wget` is gone, so the BLOCKED list below is now a rule
-> the model follows, not one the host enforces. Do not rely on it to stop a stray `curl`.
-> `ctx_doctor` reporting `Plugin registration: No plugin array found` and
-> `Legacy MCP registration: mcp.context-mode is redundant` is **expected** in this mode — both checks
-> assume the V1 plugin path. Restore the plugin only when upstream ships a V2 `setup()` export.
+> **Transport:** local MCP server — `mcp.context-mode` in `opencode.json`
+> (`bun /Users/atti/node_modules/context-mode/cli.bundle.mjs`,
+> `CONTEXT_MODE_PLATFORM=opencode`, v1.0.151). Routing is **prompt-level only** —
+> no plugin hook enforces the BLOCKED list. `ctx_doctor` warnings about plugin /
+> legacy-MCP registration are expected. Restore the plugin only when upstream
+> ships an OpenCode v2 `setup()` export. History: `memory/research/context-mode-incidents.md`.
+
+### Route by intent
+
+| Intent | Tool |
+|--------|------|
+| Read a web page | `ctx_fetch_and_index(url, source)` → `ctx_search(queries)` |
+| HTTP call / API probe | `ctx_execute("javascript", "await fetch(...)")` |
+| Shell, >20 lines of output | `ctx_execute("shell", code)` or `ctx_batch_execute(commands, queries)` |
+| Analyze a file | `ctx_execute_file(path, language, code)` |
+| Edit a file | `read` then `edit` (exact bytes) — never the sandbox |
+| grep / search large trees | `ctx_execute("shell", "rg ...")` |
+| Count / parse / compare / transform | `ctx_execute(language, code)` — print only the answer |
+| Store for later recall | `ctx_index(content, source)` |
+| Recall | `ctx_search(queries, source?, sort?)` |
 
 ### BLOCKED
 
-- **curl / wget** → Use `ctx_fetch_and_index` or `ctx_execute("javascript", "await fetch(...)")`
-- **Inline HTTP** → Use `ctx_execute(language, code)` — only stdout enters context
-- **Direct web fetching** → Use `ctx_fetch_and_index(url, source)` then `ctx_search(queries)`
+- **curl / wget** and direct page reads → `ctx_fetch_and_index`
+- **Inline HTTP** → `ctx_execute`
+- **Raw file dumps for analysis** → `ctx_execute_file`
 
-### REDIRECTED — use sandbox
+### Loop safety
 
-- **Shell (>20 lines output)** → `ctx_batch_execute(commands, queries)` or `ctx_execute("shell", code)`
-- **File reading (for analysis)** → `ctx_execute_file(path, language, code)` — only `console.log()` output enters context
-- **File reading (for editing)** → Read tool (need exact bytes for Edit)
-- **grep / search (large results)** → `ctx_execute("shell", "rg ...")` in sandbox
-
-### Loop-safety — shell quoting & tool-error recovery
-
-**Why this exists:** On 2026-07-07 a `ctx_execute("shell", code)` multi-line verification script had an unmatched `"` inside a heredoc. The cloud model then emitted six malformed tool calls in one turn — empty tool name, truncated paths, a `cd /a/bash && bash <<< $'true'` no-op "probe" against a nonexistent path — before opencode's `doom_loop` + `external_directory` guards aborted the turn and compaction pruned it. No damage, but the verification step was skipped.
-
-| Risk | Rule |
-|------|------|
-| **Multi-line shell & nested quotes** | If a `ctx_execute("shell", code)` script is **>5 lines OR contains any `"` inside already-quoted strings**, write it as a temp `.sh` file in the workspace (via the `write` tool — file lives on host, sandbox can read it) and execute with `ctx_execute("shell", "bash <project>/.agent/tmp/verify-NNN.sh")`. Removes the nested-quoting class of bugs. Single-purpose, ≤5-line scripts can stay inline. |
-| **On tool error → STOP, don't mutate** | If a tool returns `invalid arguments`, `unmatched "`, or `Exit code 1`, fix the **original** call by re-reading its schema. Do NOT retry with: a different tool name, an empty tool name, a truncated/invented path, or a no-op probe. One schema-driven retry, then surface to the user. |
-| **Retry cap** | Max **2 retries** for the SAME tool after a hard error. On the 3rd failure → tell the user and stop. No doom loops. |
-| **Path hygiene** | Every path passed to a tool must be a known-existing absolute path (or a deliberate new file under the workspace). Never invent a path like `/a/bash` to "test" state — opencode's `external_directory` guard flags it and aborts the turn. |
-| **No sanity probes** | Never send `bash <<< $'true'`, `cd <invented-path>`, `[a/a]`, or similar probes to recover from an error. If model state is uncertain, ask the user — don't try to "wake" the shell. |
+- **Scratch scripts**: >5 lines or nested quotes → write to `.agent/tmp/*.sh`, run by path.
+- **Tool error** → fix the *original* call from its schema; one schema-driven retry, max 2 per tool, then stop and report.
+- **No probes**: never `cd`/test invented paths, never `bash <<< $'true'`. Uncertain state → ask the user.
+- **Paths**: absolute and known-existing, or deliberate new files under the workspace.
 
 ### Think in Code — MANDATORY
 
-Analyze/count/filter/compare/search/parse/transform data: **write code** via `ctx_execute(language, code)`. Only `console.log()` output enters context. One script replaces ten tool calls.
+Analyze/count/filter/compare/parse/transform in `ctx_execute(language, code)`; only `console.log()` output enters context. One script replaces ten tool calls.
 
-### Session Continuity
+### Session continuity
 
 On resume, search BEFORE asking the user:
 
@@ -129,14 +143,22 @@ On resume, search BEFORE asking the user:
 
 ## qmd — Persistent Knowledge Base
 
-Local semantic search with BM25 + vector + LLM reranking. Collections: `tasks`, `patterns`, `plans`, `research` in `memory/`.
+Local semantic search with BM25 + vector + LLM reranking. Collections: `tasks`, `patterns`, `plans`, `research`, `builds`, `decisions`, `mistakes`, `ghost` in `memory/`.
+
+Pipeline: query expansion (2 alternates, original ×2) → BM25 + vector per query → RRF (k=60) + top-rank bonus → top 30 → `Qwen3-Reranker-0.6B` LLM rerank → position-aware blend. Frontmatter is indexed as text, not as metadata — there is no `type:` filter. Search the literal token without a colon (`qmd query "type pattern context-mode"`): FTS5 treats `type:pattern` as a column filter and returns nothing.
 
 | Tool | When to use |
 |------|-------------|
-| `qmd query` | Search for past work at startup |
+| `qmd query` | Search for past work at startup (hybrid + rerank) |
+| `qmd search` | BM25 only, no models — fast and deterministic |
 | `qmd get` | Retrieve a specific document by path or docid |
 | `qmd multi_get` | Retrieve multiple documents by glob |
 | `qmd status` | Check index health |
+| `qmd update` | Re-index after writing memory files |
+| `qmd embed` | Rebuild vectors after model/chunk changes |
+| `qmd cleanup` | Delete inactive docs (tombstones), orphans, caches; vacuum |
+| `scripts/memory-lint.sh` | Validate frontmatter + links before indexing |
+| `scripts/memory-prune.sh` | Archive stale notes; then update + cleanup |
 
 ---
 
