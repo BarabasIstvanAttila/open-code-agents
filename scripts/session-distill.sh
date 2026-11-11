@@ -8,7 +8,7 @@
 # The model never writes frontmatter, slugs, or paths.
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_DIR="${LOCALAI_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 MEMORY_DIR="${PROJECT_DIR}/memory"
 TMP_DIR="${PROJECT_DIR}/.agent/tmp"
 PROMPT_TEMPLATE="${PROJECT_DIR}/templates/session-distill-prompt.md"

@@ -20,7 +20,7 @@ if [ "${CONTEXT}" = "submodule" ]; then
   echo "⚠  Running as a submodule. Consider running from your project root:"
   echo "   OPENCODE_ENABLE_EXA=1 opencode"
   echo ""
-  echo "   Or initialize with: bash ${SCRIPT_DIR}/scripts/init-submodule.sh"
+  echo "   Or wire a consuming repo: bash ${SCRIPT_DIR}/scripts/bootstrap-host.sh"
   echo ""
 fi
 

@@ -2,7 +2,7 @@
 # Validate OKF frontmatter and link integrity for memory/ before qmd indexes it.
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_DIR="${LOCALAI_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 MEMORY_DIR="${PROJECT_DIR}/memory"
 STRICT=0
 [[ "${1:-}" == "--strict" ]] && STRICT=1

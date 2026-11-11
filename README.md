@@ -1,9 +1,8 @@
 # open-code-agents
 
-Local-first AI agent infrastructure for OpenCode. Provides a complete agent pipeline with three flows — manual (scout → plan → dev → deploy → qa → mem), semi-automatic (builder orchestrating coder subagents), and a goal-driven orchestrator loop for container development — powered by free cloud models via opencode-go, with persistent semantic memory through qmd.
+Local-first AI agent infrastructure for OpenCode. Four agents (`researcher`, `plan`, `build`, `orchestrator`) share a curated, qmd-indexed knowledge base, a session-distillation pipeline, and one-command wiring for consuming repositories — all running locally through OpenCode.
 
-**Use case**: Add this as a Git submodule to any project to get full AI-powered development support running locally through OpenCode.
-
+**Use case**: Add this repository as a Git submodule to any project to give it the full agent pipeline, persistent memory, and MCP tooling.
 
 ---
 
@@ -12,86 +11,197 @@ Local-first AI agent infrastructure for OpenCode. Provides a complete agent pipe
 ```
   Your Project
    │
-   ├── local-ai/                  ← This submodule
-   │   ├── opencode.json          ← Agent configuration (providers, MCP servers, tools)
-   │   ├── AGENTS.md              ← Agent routing rules and pipeline docs
-   │   ├── .opencode/agent/       ← Agent definitions (scout, plan, builder, dev, coder, qa, mem)
-   │   ├── .opencode/skills/      ← OpenCode skills
-   │   └── scripts/               ← Setup and maintenance scripts
+   ├── .harness/                 ← This submodule
+   │   ├── opencode.json         ← Providers, MCP servers, tools
+   │   ├── AGENTS.md             ← Agent routing rules and working conventions
+   │   ├── .opencode/
+   │   │   ├── agent/            ← researcher, plan, orchestrator (build is built-in)
+   │   │   ├── commands/         ← /ctx, /distill, /prune
+   │   │   └── skills/           ← OpenCode skills
+   │   ├── scripts/              ← Setup, memory, distill, maintenance
+   │   ├── templates/            ← OKF frontmatter + distill prompt templates
+   │   └── documents/ghost/      ← Ghost adoption notes (Phase 2/3 parked)
    │
-   ├── AGENTS.md                  ← symlink → local-ai/AGENTS.md
-   ├── opencode.json              ← symlink → local-ai/opencode.json (or merged)
-   ├── .opencode/agent/           ← symlink → local-ai/.opencode/agent/
-   ├── .opencode/skills/          ← symlink → local-ai/.opencode/skills/
-   ├── .agent/                    ← Agent working files (gitignored)
-   ├── .qmd/                      ← qmd search index (gitignored)
-   └── memory/                    ← Persistent AI memory (versioned with repo)
-       ├── tasks/
-       ├── patterns/
-       ├── plans/
-       ├── research/
-       └── builds/
+   ├── .opencode/
+   │   ├── agent    → .harness/.opencode/agent      (symlink)
+   │   └── commands → .harness/.opencode/commands   (symlink)
+   ├── scripts/                  ← LOCALAI_ROOT wrappers (distill, lint, prune)
+   ├── .agent/                   ← Agent working files (gitignored)
+   ├── .qmd/                     ← qmd index (gitignored)
+   └── memory/                   ← Persistent knowledge base (versioned)
+       ├── tasks/ patterns/ plans/ research/ builds/
+       └── decisions/ mistakes/ ghost/
 ```
 
 ### Agent Pipeline
 
-Three flows — pick by task shape:
+| Agent | Source | Mode | Model | Role |
+|-------|--------|------|-------|------|
+| **researcher** | `.opencode/agent/researcher.md` | primary | opencode-go/deepseek-v4-flash | Read-only research — maps the codebase, fetches docs, writes only `.agent/research-report.md` |
+| **plan** | `.opencode/agent/plan.md` | primary | opencode-go/kimi-k3 | File-specific implementation plan, 3-round cap, writes only `.agent/plan.md` |
+| **build** | OpenCode built-in | primary | opencode/glm-5.1 | Implements the plan step by step, edits files, runs commands |
+| **orchestrator** | `.opencode/agent/orchestrator.md` | primary | opencode-go/deepseek-v4-flash | Autonomous container loop — goal → plan → implement → verify (local Docker, one container at a time, curl + Playwright) |
 
-**1. Manual flow (every step user-invoked — full control):**
-```
-/mode scout → /mode plan → /mode dev → /mode deploy → /mode qa → /mode mem
-```
+Typical flows:
 
-**2. Semi-automatic development flow (builder orchestrates implementation — recommended for multi-file tasks):**
 ```
-/mode scout → /mode plan → [auto: mem] → /mode builder → [auto: coders → qa → mem]
-```
-
-**3. Goal-driven orchestrator flow (autonomous container loop — container/devops goals):**
-```
-/mode orchestrator    (plan → implement → deploy one-by-one on local Docker → curl+browser verify → findings → re-plan, until DoD green; max 5 iterations)
+Manual:         /mode researcher → /mode plan → /mode build
+Container loop: /mode orchestrator   (iterates plan → implement → verify until DoD green)
 ```
 
-| Agent | Mode | Model | Role |
-|-------|------|-------|------|
-| **scout** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Research — gather context, map codebase, fetch docs |
-| **plan** | primary | opencode-go/kimi-k3 (cloud) | Plan — 3-round cap, produce file-specific plan, auto-spawn mem |
-| **builder** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Orchestrate — decompose plan, spawn coders, auto-spawn qa + mem |
-| **dev** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Standalone implementation — simple tasks that skip the builder |
-| **deploy** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Deploy — compose stacks over SSH, deterministic smoke tests |
-| **orchestrator** | primary | opencode-go/deepseek-v4-flash (cloud-free) | Container loop — goal→plan→implement→verify locally (one container at a time, curl + Playwright browser), findings-driven iterations |
-| **coder** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Focused implementation — spawned by builder, no MCPs, context-isolated |
-| **qa** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Validate — tests, lint, typecheck, plan compliance |
-| **mem** | subagent | opencode-go/deepseek-v4-flash (cloud-free) | Memory — commit artifacts (auto-spawned by plan and builder) |
+Built-in `explore` and `general` subagents handle delegated and parallel research.
 
 ### Model routing
 
-- **Cloud (opencode-go)**: Default for all pipeline agents — free-tier models (`deepseek-v4-flash` for scout/dev/deploy/builder/orchestrator/coder/qa/mem, `kimi-k3` for plan). Cost-controlled with a 3-round cap for plan.
-- **Local (oMLX)**: Retained for manual local-only runs via the `omlx/` provider on port 8005 (`Qwen3.5-9B-OptiQ-4bit`, 32K context). Not a pipeline default.
+- **Cloud (opencode-go)** — default for the pipeline: `deepseek-v4-flash` for researcher/orchestrator, `kimi-k3` for plan, `glm-5.1` for build.
+- **Local (oMLX)** — retained for manual local-only runs via the `omlx/` provider on port 8005 (`Qwen3.5-9B-OptiQ-4bit`, 32K context). Not a pipeline default.
+
+---
+
+## Memory System
+
+Two layers, kept separate:
+
+| Layer | Where | Trigger | Contents |
+|-------|-------|---------|----------|
+| **Curation** | `memory/` (versioned) | explicit, lint-gated writes | OKF concepts, one per file |
+| **Capture** | `.agent/` (gitignored) | manual distill today; plugin events in Phase 2 | raw transcripts and summaries |
+
+### Collections
+
+| Directory | `type` | Holds |
+|-----------|--------|-------|
+| `memory/tasks/` | `task` | Task summaries — what was asked, what shipped |
+| `memory/patterns/` | `pattern` | Reusable code and configuration patterns |
+| `memory/plans/` | `plan` | Archived implementation plans |
+| `memory/research/` | `research` | Research findings and source digests |
+| `memory/builds/` | `build` | Per-session build records, session id + commit binding |
+| `memory/decisions/` | `decision` | Technical decisions with context and reasoning |
+| `memory/mistakes/` | `mistake` | Pitfalls and the rule that prevents a repeat |
+| `memory/ghost/` | — | Ghost reference area (non-OKF; excluded from lint/prune, indexed for search) |
+
+`memory/index.md` is the human map; `memory/log.md` is the append-only change log.
+Both are excluded from lint and indexing.
+
+### OKF frontmatter
+
+Every concept file starts with:
+
+```yaml
+---
+type: decision          # required; equals the singular collection name
+title: Short human title (must match the H1)
+description: Two sentences max — lands in the reranker's first chunk.
+tags: [memory, qmd]
+timestamp: 2026-10-22   # YYYY-MM-DD; used by retention
+status: active          # optional: active | archived | superseded
+superseded_by: memory/decisions/newer.md  # only with status: superseded
+---
+```
+
+Rules: one concept per file, slug filename, plain relative links between
+concepts. Full template: `templates/memory-frontmatter.md`.
+
+Write path: create the file → `scripts/memory-lint.sh` → `bunx @tobilu/qmd update`
+(+ `embed` for new content) → one line in `memory/log.md`.
+
+### Session distillation
+
+Turn a finished OpenCode session into durable memory:
+
+```bash
+scripts/session-distill.sh                 # newest non-distill session
+scripts/session-distill.sh --session ses_… # specific session
+scripts/session-distill.sh --dry-run       # summarize + show planned files, write nothing
+scripts/session-distill.sh --force         # re-distill an already-processed session
+scripts/session-distill.sh --note          # also attach a git note to HEAD
+scripts/session-distill.sh --model <id>    # override the summarizer model
+```
+
+Pipeline:
+
+```
+opencode session export (raw, local only)
+  → transcript compaction (~12 KB: prompts, assistant text, touched files)
+  → free model summary (six sections: Intent / Changes / Decisions / Mistakes / Open Items / Tags)
+  → scripts/distill-write.js  (deterministic writer: frontmatter, slugs, secret gate)
+  → memory/decisions/ + memory/mistakes/ + memory/builds/
+  → memory-lint.sh → qmd update → memory/log.md
+  → optional: git notes --ref=ai-sessions on HEAD
+```
+
+Guarantees:
+
+- **The model writes prose only** — frontmatter, filenames, and paths are script-owned.
+- **Secret gate** — `sk-…`, `ghp_…`, `AKIA…`, and private-key blocks abort the write (exit 3).
+- **Idempotent** — the script greps the versioned memory records for the session id; no bookkeeping file.
+- **Dry run** — full summary, zero writes.
+
+### Commands
+
+| Command | Arguments | What it does |
+|---------|-----------|--------------|
+| `/distill` | `[ses_…] [--dry-run] [--force] [--note]` | Runs the session distiller |
+| `/prune` | `[--days N]` | Dry-run list → confirmation → archive + qmd cleanup |
+| `/ctx` | `<task>` | Runs a task strictly through context-mode tools |
+
+Commands require an OpenCode restart after installation to appear.
+
+### Retention
+
+qmd has **no TTL** — documents expire only when files leave a collection path.
+
+```bash
+scripts/memory-prune.sh --dry-run     # preview
+scripts/memory-prune.sh --days 90     # archive older than 90 days
+scripts/memory-prune.sh               # default 180 days
+```
+
+Files are moved to `memory/.archive/<collection>/` when `status: archived` or
+older than N days (unless tagged `keep`), then `qmd update` marks them inactive
+and `qmd cleanup` hard-deletes rows, orphans, caches, and vacuums.
+`memory/ghost/` is never pruned. Pruning archives; it never destroys.
+
+### Retrieval
+
+```bash
+bunx @tobilu/qmd query "type decision session-distill"   # hybrid + rerank
+bunx @tobilu/qmd search "qmd frontmatter"                 # BM25 only
+bunx @tobilu/qmd get memory/decisions/<file>.md
+```
+
+Frontmatter is indexed as text, not metadata. Avoid `type:decision` (FTS5 reads
+the colon as a column filter); search the literal token without a colon.
+
+### Ghost adoption
+
+`memory/ghost/` holds the reference notes on
+[notkurt/ghost](https://github.com/notkurt/ghost): the capture-vs-curation
+design, session/ledger formats, and the source map. Phase 1 (ledgers + manual
+distill) is shipped; Phase 2 (automatic capture plugin) and Phase 3 (warm
+resume, analytics, AGENTS.md slimming) are parked in `documents/ghost/`.
 
 ---
 
 ## Quick Start (Standalone)
 
-If you want to use this project on its own (not as a submodule):
-
 ```bash
-git clone git@github.com:BarabasIstvanAttila/open-code-agents.git
+git clone <this-repo>
 cd open-code-agents
 
-# Install prerequisites
-brew install bun          # or: curl -fsSL https://bun.sh/install | bash
+# Prerequisites
+brew install bun                      # or: curl -fsSL https://bun.sh/install | bash
 npm install -g opencode-ai
-npm install -g @tobilu/qmd
+npm install -g @tobilu/qmd            # or use: bunx @tobilu/qmd
 
-# Set environment variables
-export OMLX_API_KEY="your-key"
-export CONTEXT7API="your-key"
+# Optional environment
+export OMLX_API_KEY="your-key"        # only for local oMLX runs
+export CONTEXT7API="your-key"         # Context7 docs lookup
 
-# Set up qmd collections and index
+# Initialize memory + search index
 ./scripts/qmd-setup.sh
 
-# Verify all services
+# Verify services
 ./scripts/check-services.sh
 
 # Start OpenCode
@@ -102,113 +212,68 @@ OPENCODE_ENABLE_EXA=1 opencode
 
 ## Using as a Git Submodule
 
-This is the primary use case. Add this project as a submodule to give any repository local AI support via OpenCode.
+This is the primary use case. The harness pins the agent definitions while the
+consuming repo owns its `memory/` and `.qmd/` index.
 
-### Adding the submodule
-
-From your project root:
-
-```bash
-# Add this repository as a submodule
-git submodule add git@github.com:BarabasIstvanAttila/open-code-agents.git local-ai
-git submodule update --init --recursive
-
-# Run the initialization script
-bash local-ai/scripts/init-submodule.sh local-ai
-```
-
-The init script will:
-
-1. **Validate prerequisites** — Check for git, bun, opencode CLI, oMLX, qmd
-2. **Create symlinks** — Link config files from the submodule into your project root so OpenCode can find them:
-   - `AGENTS.md` → `local-ai/AGENTS.md`
-   - `.opencode/agent/` → `local-ai/.opencode/agent/`
-   - `.opencode/skills/` → `local-ai/.opencode/skills/`
-   - `.opencode/package.json` → `local-ai/.opencode/package.json`
-3. **Handle opencode.json** — If your project doesn't have one, it symlinks the submodule's config. If it does, it prints merge instructions.
-4. **Create working directories** — `.agent/`, `memory/` (with tasks, patterns, plans, research, builds subdirs)
-5. **Initialize qmd** — Set up project-local index and collections
-6. **Update .gitignore** — Add entries for `.agent/`, `.qmd/`, `*.secrets/`, `.env`, `memory/`
-
-### Setting environment variables
-
-Add to your shell profile (`~/.zshrc` or `~/.bashrc`):
+### Add the submodule
 
 ```bash
-export OMLX_API_KEY="your-omlx-key"
-export CONTEXT7API="your-context7-key"
+# From your project root
+git submodule add <this-repo-url> .harness
+git submodule update --init
+
+# Wire the host repo
+bash .harness/scripts/bootstrap-host.sh
 ```
 
-Or create a `.env` file in your project root (add `.env` to `.gitignore`):
+`bootstrap-host.sh` (idempotent, non-destructive):
+
+0. **Migration** — removes legacy root symlinks (`AGENTS.md`, `opencode.json`)
+   that point into the harness (old `init-submodule.sh` wiring).
+1. **Global MCP** — merges the 6 shared servers + tool enables into
+   `~/.config/opencode/opencode.json`, keeping existing entries. They then apply
+   to every project on the machine.
+2. **Symlinks** — `.opencode/agent` and `.opencode/commands` → harness.
+3. **Wrappers** — `scripts/{session-distill,memory-lint,memory-prune}.sh` with
+   `LOCALAI_ROOT` set to the host root.
+4. **Instructions** — merges `.harness/AGENTS.md` into the host `opencode.json`.
+5. **Host memory** — creates the host's own `memory/` (8 collections) and a
+   project-local `.qmd` index.
+
+Flags: `--harness <path>`, `--skip-global-mcp`, `--context-mode-path <path>`,
+`--dry-run`.
+
+Old setups — root `AGENTS.md` / `opencode.json` symlinks into the harness, created
+by the retired `init-submodule.sh` — are migrated automatically: bootstrap
+removes those symlinks, replaces `opencode.json` with a real host-owned file, and
+wires the new layout. Re-add any host-specific providers/permissions afterwards.
+
+### Fresh clone of a project that already uses the submodule
 
 ```bash
-OMLX_API_KEY=your-omlx-key
-CONTEXT7API=your-context7-key
+git clone <your-project-url>
+cd <your-project>
+git submodule update --init
+bash .harness/scripts/bootstrap-host.sh
 ```
 
-### Starting oMLX
-
-oMLX serves local models on port 8005. Start it before using OpenCode:
+### Update the harness
 
 ```bash
-# macOS menu bar app — recommended
-open -a oMLX
-
-# Or via Homebrew service
-brew services start jundot/omlx/omlx
+git submodule update --remote .harness
+bash .harness/scripts/bootstrap-host.sh    # refresh links/wrappers
+git add .harness && git commit -m "chore: update harness submodule"
 ```
 
-### Starting Docker (for MCP servers)
-
-Some MCP servers (duckduckgo, sequentialthinking) run as Docker containers:
+### Remove the submodule
 
 ```bash
-open -a Docker    # macOS
-# Or: sudo systemctl start docker    # Linux
-```
-
-### Verifying the setup
-
-```bash
-bash local-ai/scripts/check-services.sh
-```
-
-Expected output:
-
-```
-✓ oMLX              localhost:8005
-✓ qmd               status ok
-✓ context-mode      binary found
-✓ bun               binary found
-✓ opencode          binary found
-```
-
-### Starting OpenCode
-
-```bash
-OPENCODE_ENABLE_EXA=1 opencode
-```
-
-Then use the agent pipeline:
-
-**Automated flow (recommended — 3 commands):**
-```
-/mode scout    →  Research the task
-/mode plan     →  Create plan + auto-save to memory
-/mode builder  →  Orchestrate coders + auto-run QA + auto-save to memory
-```
-
-**Standalone dev flow (for simple tasks — 5 commands):**
-```
-/mode scout    →  Research the task
-/mode plan     →  Create plan + auto-save to memory
-/mode dev      →  Implement the plan (standalone, full context)
-/mode plan     →  Create implementation plan
-/mode dev      →  Implement the plan
-/mode deploy   →  Deploy compose stacks over SSH + smoke tests
-/mode orchestrator →  Autonomous container loop: plan→implement→verify (local Docker, one container at a time, curl + browser) until done
-/mode qa       →  Validate the implementation
-/mode mem      →  Commit to persistent memory
+rm -rf .opencode/agent .opencode/commands scripts/session-distill.sh \
+       scripts/memory-lint.sh scripts/memory-prune.sh
+git submodule deinit -f .harness
+git rm -f .harness
+rm -rf .git/modules/.harness
+git commit -m "chore: remove harness submodule"
 ```
 
 ---
@@ -217,165 +282,88 @@ Then use the agent pipeline:
 
 | Operation | Command |
 |-----------|---------|
-| **Initialize** (fresh clone) | `git submodule update --init --recursive` |
-| **Initialize** (first time) | `bash local-ai/scripts/init-submodule.sh local-ai` |
-| **Update** (pull latest) | `bash local-ai/scripts/update-submodule.sh local-ai` |
-| **Update** (manual) | `cd local-ai && git pull origin main && cd ..` |
-| **Check status** | `git submodule status local-ai` |
-| **Remove** | See [Removing the submodule](#removing-the-submodule) below |
-
-### Cloning a project that already uses this submodule
-
-```bash
-git clone <your-project-url>
-cd <your-project>
-git submodule update --init --recursive
-bash local-ai/scripts/init-submodule.sh local-ai
-```
-
-### Updating to the latest version
-
-```bash
-bash local-ai/scripts/update-submodule.sh local-ai
-
-# Then commit the updated reference
-git add local-ai
-git commit -m "chore: update local-ai submodule"
-```
-
-### Removing the submodule
-
-```bash
-# Remove symlinks (adjust if you used a different submodule path)
-rm AGENTS.md
-rm opencode.json
-rm -rf .opencode/agent
-rm -rf .opencode/skills
-rm .opencode/package.json
-
-# Remove the submodule
-git submodule deinit -f local-ai
-git rm -f local-ai
-rm -rf .git/modules/local-ai
-
-# Commit the removal
-git commit -m "chore: remove local-ai submodule"
-```
+| Initialize (first time) | `git submodule add <url> .harness && git submodule update --init && bash .harness/scripts/bootstrap-host.sh` |
+| Initialize (fresh clone) | `git submodule update --init && bash .harness/scripts/bootstrap-host.sh` |
+| Update | `git submodule update --remote .harness && bash .harness/scripts/bootstrap-host.sh` |
+| Status | `git submodule status .harness` |
+| Re-link after git operations | `bash .harness/scripts/bootstrap-host.sh --skip-global-mcp` |
 
 ---
 
 ## Configuration
 
-### opencode.json
+### Global MCP config
 
-If your project already has its own `opencode.json`, the init script will not overwrite it. Instead, you need to manually merge the required sections:
+`~/.config/opencode/opencode.json` holds the shared servers and applies to every
+project:
 
-**Required sections to add:**
-
-```json
+```jsonc
 {
-  "instructions": ["AGENTS.md"],
-  "provider": {
-    "omlx": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "oMLX",
-      "options": {
-        "baseURL": "http://127.0.0.1:8005/v1",
-        "apiKey": "{env:OMLX_API_KEY}"
-      },
-      "models": {
-        "gemma-4-e4b-it-4bit": {
-          "name": "gemma-4-e4b-it-4bit",
-          "limit": { "context": 32768, "output": 8192 }
-        }
-      }
-    }
-  },
-  "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp",
-      "headers": { "CONTEXT7_API_KEY": "{env:CONTEXT7API}" },
-      "enabled": true
-    },
-    "duckduckgo": {
-      "type": "local",
-      "command": ["docker", "run", "-i", "--rm", "mcp/duckduckgo"],
-      "enabled": true
-    },
-    "sequentialthinking": {
-      "type": "local",
-      "command": ["docker", "run", "-i", "--rm", "mcp/sequentialthinking"],
-      "enabled": true
-    },
-    "qmd": {
-      "type": "local",
-      "command": ["bunx", "@tobilu/qmd", "mcp"],
-      "enabled": true
-    }
-  },
-  "plugin": ["context-mode"]
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": { /* context-mode, context7, duckduckgo, sequentialthinking, qmd, playwright */ },
+  "tools": { "context-mode*": true, "qmd*": true, /* … */ }
 }
 ```
 
-**Or replace your opencode.json entirely:**
+Project configs override global per server name.
 
-```bash
-rm opencode.json
-ln -s local-ai/opencode.json opencode.json
+### Host `opencode.json`
+
+`bootstrap-host.sh` merges the only required key:
+
+```jsonc
+{
+  "instructions": [".harness/AGENTS.md"]
+}
 ```
+
+Add host-specific providers, permissions, or agents normally.
 
 ### Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OMLX_API_KEY` | Yes | API key for local oMLX server |
-| `CONTEXT7API` | Yes | API key for Context7 documentation lookup |
+| `OMLX_API_KEY` | Optional | Local oMLX server key (manual local runs only) |
+| `CONTEXT7API` | Yes for Context7 | Documentation lookup key |
 | `OPENCODE_ENABLE_EXA` | Optional | Set to `1` to enable Exa search |
 
-### MCP Servers
+### MCP servers
 
 | Server | Type | Purpose |
 |--------|------|---------|
+| **context-mode** | Local (`bun …/cli.bundle.mjs`) | Sandboxed I/O, context protection |
 | **context7** | Remote | Library documentation lookup |
 | **duckduckgo** | Docker | Web search |
 | **sequentialthinking** | Docker | Structured reasoning chains |
-| **qmd** | Local (bunx) | Persistent semantic memory |
-| **context-mode** | Plugin | Sandboxed execution, I/O routing |
+| **qmd** | Local (`bunx @tobilu/qmd mcp`) | Persistent semantic memory |
+| **playwright** | Local (`bunx @playwright/mcp`) | Browser verification |
+
+> **Note:** context-mode runs as an **MCP server**, not a V1 plugin — OpenCode v2
+> removed the plugin contract it used. Routing rules are prompt-level. Expected
+> `ctx_doctor` warnings about plugin/legacy-MCP registration are documented in
+> `memory/research/context-mode-incidents.md`.
 
 ---
 
 ## Working Files
 
-These directories are created by init and should be in `.gitignore`:
+Gitignored (per-host, disposable):
 
 ```
-.agent/                  ← Agent working files (gitignored)
-├── research-report.md   ← scout output
-├── plan.md              ← plan agent output
-├── builder-progress.md  ← builder runtime progress tracking
-├── builder-report.md    ← builder final report
-├── dev-report.md        ← dev agent output (standalone mode)
-├── qa-report.md         ← qa agent output
-└── memory-log.md        ← mem agent output
+.agent/
+├── research-report.md      ← researcher output
+├── plan.md                 ← plan agent output
+├── orchestrator/           ← loop state (goal, plan-N, findings-N, verify/)
+├── sessions/               ← Phase 2 capture (parked)
+└── tmp/                    ← raw exports, distill logs
 
-.qmd/                    ← qmd search index (gitignored)
+.qmd/                       ← project-local qmd index
 ```
 
-This directory is **versioned with your repo**:
+Versioned with the host repo:
 
 ```
-memory/                  ← Persistent AI memory
-├── tasks/               ← Task summaries
-├── patterns/            ← Code patterns
-├── plans/               ← Archived plans
-├── research/            ← Archived research
-└── builds/              ← Per-task build records (created by builder)
-    └── <date>-<slug>/
-        ├── plan.md      ← Copy of plan used
-        ├── research.md  ← Copy of research used
-        ├── steps/       ← Per-step implementation records
-        └── summary.md   ← Build results summary
+memory/                     ← 8 OKF collections + index.md + log.md
 ```
 
 ---
@@ -384,13 +372,12 @@ memory/                  ← Persistent AI memory
 
 | Software | Version | Install |
 |----------|---------|---------|
-| **oMLX** | latest | macOS menu bar app — serves models on port 8005 |
-| **Node.js** | 20+ | `brew install node` |
 | **bun** | latest | `curl -fsSL https://bun.sh/install \| bash` |
-| **OpenCode** | latest | `npm install -g opencode-ai` |
-| **qmd** | latest | `npm install -g @tobilu/qmd` |
-| **Docker** | latest | For MCP servers (duckduckgo, sequentialthinking) |
-| **context-mode** | — | Installed as OpenCode plugin automatically |
+| **OpenCode** | v2 | `npm install -g opencode-ai` |
+| **qmd** | latest | `npm install -g @tobilu/qmd` or `bunx @tobilu/qmd` |
+| **Docker** | latest | For duckduckgo + sequentialthinking MCP servers |
+| **oMLX** | latest | Optional — local models on port 8005 |
+| **sqlite** (macOS) | — | `brew install sqlite` (qmd dependency) |
 
 ---
 
@@ -398,36 +385,32 @@ memory/                  ← Persistent AI memory
 
 ```
 open-code-agents/
-├── AGENTS.md                    ← Agent pipeline documentation & routing rules
-├── opencode.json                ← OpenCode configuration (providers, MCP, tools)
+├── AGENTS.md                    ← Agent routing rules, context-mode contract, memory conventions
+├── opencode.json                ← OpenCode config (providers, MCP, tools)
+├── opencode.json.tui-migration.bak
+├── tui.json                     ← Terminal UI settings
 ├── start.sh                     ← Start OpenCode with EXA enabled
-├── Install.md                   ← Installation notes
-├── README.md                    ← This file
+├── README.md / SETUP.md / Install.md
 ├── .opencode/
-│   ├── agent/
-│   │   ├── scout.md             ← Research agent definition
-│   │   ├── plan.md              ← Planning agent definition
-│   │   ├── builder.md           ← Orchestration agent definition
-│   │   ├── dev.md               ← Standalone implementation agent definition
-│   │   ├── coder.md             ← Focused subagent definition (spawned by builder)
-│   │   ├── qa.md                ← QA validation agent definition
-│   │   └── mem.md               ← Memory agent definition
-│   ├── skills/
-│   │   ├── skill-builder/       ← Skill creation skill
-│   │   ├── esp32-idf/           ← ESP-IDF toolchain skill
-│   │   └── esp32-patterns/      ← ESP32 patterns skill
-│   ├── .gitignore               ← Ignore node_modules in .opencode
-│   └── package.json             ← Plugin dependencies (context-mode)
+│   ├── agent/{researcher,plan,orchestrator}.md
+│   ├── commands/{ctx,distill,prune}.md
+│   ├── skills/{skill-builder,esp32-idf,esp32-patterns,docker-loop,homelab-deploy,…}
+│   └── package.json
 ├── scripts/
-│   ├── init-submodule.sh        ← Initialize as submodule in a parent project
-│   ├── init-esp32.sh            ← Initialize ESP-IDF project with LSP support
-│   ├── update-submodule.sh      ← Update submodule to latest version
-│   ├── check-services.sh        ← Verify all services are running
-│   ├── check-esp32.sh           ← Verify ESP-IDF + LSP environment
-│   ├── qmd-setup.sh             ← Initialize qmd collections and index
-│   └── start.sh                 ← Start opencode with EXA enabled
-├── .secrets/                    ← Secret files (gitignored)
-├── memory/                      ← Persistent AI memory collections
+│   ├── bootstrap-host.sh        ← Wire a consuming repo (Strategy A)
+│   ├── bootstrap-merge.js       ← Non-destructive config merges
+│   ├── session-distill.sh       ← Session → memory pipeline
+│   ├── distill-write.js         ← Deterministic OKF writer
+│   ├── memory-lint.sh           ← Frontmatter + link validation
+│   ├── memory-prune.sh          ← Retention + qmd cleanup
+│   ├── qmd-setup.sh             ← Collections + index init (honors LOCALAI_ROOT)
+│   ├── init-esp32.sh / check-esp32.sh
+│   └── check-services.sh
+├── templates/
+│   ├── memory-frontmatter.md
+│   └── session-distill-prompt.md
+├── documents/ghost/             ← Phase 2/3 TODOs + setup README
+├── memory/                      ← 8 OKF collections (versioned)
 └── .agent/                      ← Agent working files (gitignored)
 ```
 
@@ -435,46 +418,74 @@ open-code-agents/
 
 ## How It Works
 
-When you add this project as a submodule and run `init-submodule.sh`:
+1. **OpenCode discovery** — the host's `opencode.json` points at
+   `.harness/AGENTS.md`; agents and commands are symlinked into `.opencode/`.
+2. **Memory root** — `LOCALAI_ROOT` makes the harness scripts read/write the
+   host's `memory/` and `.qmd/`, not the submodule's.
+3. **Curation** — agents write OKF concepts; lint gates structure; qmd indexes
+   for hybrid retrieval (BM25 + vectors + reranker).
+4. **Capture** — `session-distill.sh` summarizes a session with a free model and
+   writes decision/mistake/build records. Raw transcripts never enter versioned
+   memory.
+5. **Retention** — `memory-prune.sh` archives stale notes and cleans the index;
+   `memory/ghost/` and `keep`-tagged files are exempt.
 
-1. **Symlinks** connect the parent project root to the submodule's config files. OpenCode expects `opencode.json`, `AGENTS.md`, and `.opencode/` in the project root — symlinks make this work transparently.
+---
 
-2. **Agent definitions** in `.opencode/agent/` tell OpenCode which agents are available, their models, temperatures, and permissions.
+## Quick Reference
 
-3. **MCP servers** (context7, duckduckgo, sequentialthinking, qmd) provide tools for web search, documentation lookup, structured reasoning, and persistent memory.
+### Scripts
 
-4. **context-mode plugin** enforces I/O routing rules — all large reads go through a sandbox to prevent context window flooding.
+| Script | Purpose |
+|--------|---------|
+| `bootstrap-host.sh` | Wire a consuming repo: global MCP, symlinks, wrappers, memory |
+| `bootstrap-merge.js` | Internal merge helper for `bootstrap-host.sh` |
+| `session-distill.sh` | Distill a session into decisions/mistakes/build records |
+| `distill-write.js` | Internal deterministic writer + secret gate |
+| `memory-lint.sh` | Validate OKF frontmatter and relative links |
+| `memory-prune.sh` | Archive stale notes; run `qmd update` + `cleanup` |
+| `qmd-setup.sh` | Create collections and index (8 collections) |
+| `init-esp32.sh` / `check-esp32.sh` | ESP-IDF LSP setup / verification |
+| `check-services.sh` | Verify oMLX, qmd, context-mode, bun, opencode |
 
-5. **qmd** builds a persistent semantic search index in `.qmd/` that grows smarter over sessions. After 5+ tasks, the scout agent finds relevant past patterns in under 10 seconds.
+### Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/ctx <task>` | Execute strictly through context-mode tools |
+| `/distill [args]` | Distill a session into memory |
+| `/prune [--days N]` | Dry-run → confirm → archive + cleanup |
+| `/esp-build`, `/esp-check`, `/esp-flash`, … | ESP-IDF helpers (after `init-esp32.sh`) |
 
 ---
 
 ## ESP32/ESP-IDF Development
 
-This agent system supports ESP32 development with full LSP integration through `esp-clangd`.
+This system supports ESP32 development with full LSP integration through
+`esp-clangd`.
 
 ### Quick Start
 
 ```bash
 # In your ESP-IDF project directory:
 . $IDF_PATH/export.sh
-bash path/to/local-ai/scripts/init-esp32.sh
+bash path/to/.harness/scripts/init-esp32.sh
 opencode
 ```
 
 ### Features
 
-- **LSP via esp-clangd** — cross-compiler-aware (Xtensa + RISC-V), provides diagnostics without full build
+- **LSP via esp-clangd** — cross-compiler-aware (Xtensa + RISC-V), diagnostics without a full build
 - **Two domain skills**: `esp32-idf` (toolchain) and `esp32-patterns` (FreeRTOS, drivers, NVS, C++ idioms)
 - **Auto-generated `compile_commands.json`** — refresh with `idf.py reconfigure`
-- **IDF-aware shell wrapper** — every agent bash command has ESP-IDF environment pre-sourced
+- **IDF-aware shell wrapper** — every agent bash command has the ESP-IDF environment pre-sourced
 - **Custom slash commands** — `/esp-build`, `/esp-check`, `/esp-flash`, `/esp-size`, `/esp-new-component`
 
 ### Available Skills
 
 | Skill | Description | When to load |
 |-------|-------------|--------------|
-| `esp32-idf` | Toolchain ops: idf.py, LSP triage, build/flash/debug | Running build commands, interpreting errors |
+| `esp32-idf` | Toolchain: idf.py, LSP triage, build/flash/debug | Running build commands, interpreting errors |
 | `esp32-patterns` | Domain patterns: FreeRTOS, GPIO, SPI/I2C, NVS, C++ | Designing components, writing drivers |
 
 ### Signal Trust Order
@@ -493,6 +504,15 @@ opencode
 
 ## Troubleshooting
 
+### `ctx_workflow` / unknown context-mode tool
+
+The context-mode tool set is closed: `ctx_execute`, `ctx_execute_file`,
+`ctx_batch_execute`, `ctx_fetch_and_index`, `ctx_index`, `ctx_search`,
+`ctx_purge`, `ctx_insight`, `ctx_doctor`, `ctx_stats`, `ctx_upgrade`.
+Any other name is a hallucination; OpenCode's validator will suggest the correct
+tool. If an agent loops, tell it to call `search(namespace: "context-mode")`
+first.
+
 ### oMLX not responding
 
 ```bash
@@ -501,82 +521,73 @@ curl -s http://127.0.0.1:8005/v1/models | head -5
 open -a oMLX
 ```
 
-### oMLX works in browser but lags in OpenCode
+### oMLX lags before the first token
 
-This is almost always caused by the **context window limit** being set too high for a local model. The project config uses `32768` for context and `8192` for output — these are tuned for the gemma-4-e4b-it-4bit model running locally on Mac hardware.
-
-If you experience long delays before the first token appears:
-
-1. Check your `opencode.json` — the oMLX model limits should be:
-   ```json
-   "limit": { "context": 32768, "output": 4096 }
-   ```
-2. Do NOT set context to 262144 (256K) — the local model cannot process that much context efficiently and will hang for minutes before responding.
-3. Verify the model is responding at all:
-   ```bash
-    curl -s -H "Authorization: Bearer $OMLX_API_KEY" \
-      -H "Content-Type: application/json" \
-      -d '{"model":"gemma-4-e4b-it-4bit","messages":[{"role":"user","content":"hello"}],"max_tokens":50}' \
-      http://127.0.0.1:8005/v1/chat/completions
-   ```
-4. If the curl test works but OpenCode still lags, the issue is context size — OpenCode sends the full system prompt (AGENTS.md + agent definitions + conversation history) which can be very large.
-5. **Enable oMLX context scaling** in the admin dashboard (http://127.0.0.1:8005/admin) — this makes oMLX report a larger context to OpenCode so compaction triggers earlier.
+The configured model (`Qwen3.5-9B-OptiQ-4bit`) is tuned for
+`32K context / 4K output`. Do not raise context to 256K — local models hang.
+Enable **context scaling** in the oMLX admin dashboard
+(http://127.0.0.1:8005/admin) so compaction triggers earlier.
 
 ### Docker MCP servers failing
 
 ```bash
-docker ps                        # Check Docker is running
-docker pull mcp/duckduckgo       # Pull the image manually
+docker ps
+docker pull mcp/duckduckgo
 docker pull mcp/sequentialthinking
 ```
 
 ### qmd errors
 
 ```bash
-which qmd                        # Verify qmd is installed
-qmd status                       # Check index health
-bunx @tobilu/qmd init            # Re-initialize if needed
+which qmd            # or: bunx @tobilu/qmd --version
+bunx @tobilu/qmd status
+bunx @tobilu/qmd init   # re-initialize if the project index is missing
 ```
 
-### Symlinks broken after git operations
+### Broken symlinks after git operations
 
 ```bash
-bash local-ai/scripts/init-submodule.sh local-ai    # Re-create symlinks (idempotent)
+bash .harness/scripts/bootstrap-host.sh --skip-global-mcp
 ```
 
-### Submodule not updating
+### Distill issues
 
 ```bash
-cd local-ai && git fetch origin && git checkout main && git pull origin main
-cd ..
-git add local-ai
-git commit -m "chore: update local-ai submodule"
+ls .agent/tmp/                      # raw export, summary, stderr from the last run
+scripts/session-distill.sh --dry-run --session ses_…
+scripts/session-distill.sh --force --session ses_…   # already distilled
 ```
+
+If lint fails after a distill, the files are still written; fix the reported
+frontmatter rather than forcing green.
+
+### Prune safety
+
+Always start with `--dry-run`. Prune moves files to `memory/.archive/` and then
+runs `qmd update && cleanup`; `rm` is never used.
 
 ### context-mode not found
 
-context-mode is installed as an OpenCode plugin. If missing:
-
-```bash
-cd .opencode && bun install    # Installs @opencode-ai/plugin
-```
+context-mode is an MCP server, not a plugin. Verify the entry in
+`~/.config/opencode/opencode.json` and that
+`/Users/atti/node_modules/context-mode/cli.bundle.mjs` exists. Re-run
+`bootstrap-host.sh` to re-seed the global block.
 
 ---
 
-
 ## Articles
 
-https://github.com/criterium/opencode-lab/tree/main/research/memory-system
-https://mariozechner.at/posts/2026-03-25-thoughts-on-slowing-the-fuck-down/
-https://walkinglabs.github.io/learn-harness-engineering/en/
-https://mcpmarket.com/
-https://grokkingthesystemdesign.com/guides/agentic-system-design/#multi-agent-system-design-and-coordination-patterns
-https://datasciencedojo.com/blog/agentic-loops-explained-from-react-to-loop-engineering-2026-guide/
-https://pi.dev/packages/pi-knowledge
-https://annycedavis.com/2026/09/tokens-rule-everything-around-me.html
-https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing
-https://aaif.io/projects/goose
-https://github.com/jellydn/my-ai-tools
+- https://github.com/criterium/opencode-lab/tree/main/research/memory-system
+- https://mariozechner.at/posts/2026-03-25-thoughts-on-slowing-the-fuck-down/
+- https://walkinglabs.github.io/learn-harness-engineering/en/
+- https://mcpmarket.com/
+- https://grokkingthesystemdesign.com/guides/agentic-system-design/#multi-agent-system-design-and-coordination-patterns
+- https://datasciencedojo.com/blog/agentic-loops-explained-from-react-to-loop-engineering-2026-guide/
+- https://pi.dev/packages/pi-knowledge
+- https://annycedavis.com/2026/09/tokens-rule-everything-around-me.html
+- https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing
+- https://aaif.io/projects/goose
+- https://github.com/jellydn/my-ai-tools
 
 ## License
 

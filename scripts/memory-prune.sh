@@ -7,7 +7,7 @@
 # Files in memory/.archive/ are outside every collection glob (dot-directory).
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_DIR="${LOCALAI_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 MEMORY_DIR="${PROJECT_DIR}/memory"
 ARCHIVE_DIR="${MEMORY_DIR}/.archive"
 QMD_CMD="${QMD_CMD:-bunx @tobilu/qmd}"
